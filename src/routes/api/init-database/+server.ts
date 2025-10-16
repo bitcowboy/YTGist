@@ -83,6 +83,14 @@ export const POST = async () => {
         await ensureIntegerAttr(db, 'summaries', existing, 'hits', false, undefined, undefined, 0);
         await ensureUniqueIndex(db, 'summaries', 'unique_videoId', 'videoId');
 
+        // transcripts (store raw transcript)
+        await ensureCollection(db, 'transcripts', 'Transcripts', ['create("any")','read("any")','update("any")','delete("any")']);
+        const transcriptExisting = await getExistingAttributeKeys(db, 'transcripts');
+        await ensureStringAttr(db, 'transcripts', transcriptExisting, 'videoId', 11, true);
+        // allow large transcript up to 8000000 chars
+        await ensureStringAttr(db, 'transcripts', transcriptExisting, 'transcript', 8000000, true);
+        await ensureUniqueIndex(db, 'transcripts', 'unique_videoId_tr', 'videoId');
+
         return json({ success: true });
     } catch (e: any) {
         return error(500, `Init failed: ${e?.message || e}`);

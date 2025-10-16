@@ -39,8 +39,9 @@ const formatPrompt = `你是一个专业的文本格式化助手。请将YouTube
 除了格式化文本外，请提供一个精简的文件名建议（最多50个字符，去除特殊字符，适合作为文件名）。
 
 请按以下格式返回：
-文件名：[精简的文件名]
-内容：[格式化后的Markdown文本]`;
+文件名:[精简的文件名]
+
+内容:[格式化后的Markdown文本]`;
 
 export const formatTranscript = async (transcript: string, videoTitle?: string) => {
 	try {
@@ -68,8 +69,8 @@ export const formatTranscript = async (transcript: string, videoTitle?: string) 
 		}
 
 		// Parse the response to extract filename and content
-		const filenameMatch = formattedText.match(/文件名：(.+)/);
-		const contentMatch = formattedText.match(/内容：([\s\S]+)/);
+		const filenameMatch = formattedText.match(/文件名:(.+)/);
+		const contentMatch = formattedText.match(/内容:([\s\S]+)/);
 		
 		if (!filenameMatch || !contentMatch) {
 			// Fallback if parsing fails

@@ -1,4 +1,5 @@
 import { databases } from '$lib/server/appwrite.js';
+import { upsertTranscript } from '$lib/server/database.js';
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData, getVideoDataWithoutTranscript } from '$lib/server/videoData.js';
 import { validateNonce } from '$lib/server/nonce.js';
@@ -23,6 +24,9 @@ export const GET = async ({ url }) => {
         const videoData = await getVideoData(videoId);
 
         const unsavedSummaryData = await getSummary(videoData);
+
+        // 保存原始字幕
+        try { await upsertTranscript(videoId, videoData.transcript); } catch (e) { console.warn('persist transcript failed:', e); }
 
         const clamp = (v: string | undefined | null, max: number) =>
             (v ?? '').slice(0, max);

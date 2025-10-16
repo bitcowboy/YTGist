@@ -1,6 +1,8 @@
 import { getTranscript } from '$lib/server/transcript.js';
+import { getTranscriptByVideoId } from '$lib/server/database.js';
 import { formatTranscript } from '$lib/server/format-transcript';
-import { getVideoData } from '$lib/server/videoData.js';
+import { getVideoDataWithoutTranscript } from '$lib/server/videoData.js';
+import { getSummary } from '$lib/server/database.js';
 import { error } from '@sveltejs/kit';
 
 export const GET = async ({ url }) => {
@@ -11,17 +13,29 @@ export const GET = async ({ url }) => {
 	}
 
 	try {
-		const transcript = await getTranscript(videoId);
+		// Prefer transcript from database; fallback to fetching
+		let transcript = await getTranscriptByVideoId(videoId);
+		if (transcript) {
+			console.log('[api/format-transcript] using transcript from DB for', videoId, `(length=${transcript.length})`);
+		}
+		if (!transcript) {
+			console.log('[api/format-transcript] DB miss, fetching from YouTube for', videoId);
+			transcript = await getTranscript(videoId);
+			console.log('[api/format-transcript] fetched from YouTube for', videoId, `(length=${transcript.length})`);
+		}
 		
 		if (!transcript || transcript.trim() === '') {
 			return error(404, 'No transcript available for this video');
 		}
 
-		// Get video data to extract title
-		const videoData = await getVideoData(videoId);
+		// Prefer title from DB summary; fallback to lightweight metadata
+		const existing = await getSummary(videoId);
+		const title = existing?.title && existing.title.trim() !== ''
+			? existing.title
+			: (await getVideoDataWithoutTranscript(videoId)).title;
 		
 		// Format the transcript with AI
-		const formatResult = await formatTranscript(transcript, videoData.title);
+		const formatResult = await formatTranscript(transcript, title);
 		
 		// Use AI-generated filename with video ID suffix
 		// Remove invalid filename characters but keep Chinese characters
@@ -34,6 +48,7 @@ export const GET = async ({ url }) => {
 		const contentDisposition = `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 
 		// Return the formatted transcript as a markdown file
+		console.log('[api/format-transcript] returning formatted transcript for', videoId, `(length=${formatResult.content.length})`);
 		return new Response(formatResult.content, {
 			headers: {
 				'Content-Type': 'text/markdown; charset=utf-8',

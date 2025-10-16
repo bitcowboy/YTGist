@@ -1,6 +1,8 @@
 import { getTranscript } from '$lib/server/transcript.js';
+import { getTranscriptByVideoId } from '$lib/server/database.js';
 import { formatTranscript } from '$lib/server/format-transcript';
-import { getVideoData } from '$lib/server/videoData.js';
+import { getVideoDataWithoutTranscript } from '$lib/server/videoData.js';
+import { getSummary } from '$lib/server/database.js';
 import { error } from '@sveltejs/kit';
 
 export const GET = async ({ url }) => {
@@ -11,8 +13,17 @@ export const GET = async ({ url }) => {
 		return error(400, 'Bad YouTube video ID!');
 	}
 
-	try {
-		const transcript = await getTranscript(videoId);
+    try {
+		// Prefer transcript from database; fallback to fetching
+		let transcript = await getTranscriptByVideoId(videoId);
+		if (transcript) {
+			console.log('[api/download-transcript] using transcript from DB for', videoId, `(length=${transcript.length})`);
+		}
+        if (!transcript) {
+			console.log('[api/download-transcript] DB miss, fetching from YouTube for', videoId);
+            transcript = await getTranscript(videoId);
+			console.log('[api/download-transcript] fetched from YouTube for', videoId, `(length=${transcript.length})`);
+        }
 		
 		if (!transcript || transcript.trim() === '') {
 			return error(404, 'No transcript available for this video');
@@ -24,9 +35,12 @@ export const GET = async ({ url }) => {
 		// If format=formatted is requested, use AI to format the transcript
 		if (format === 'formatted') {
 			try {
-				// Get video data to extract title
-				const videoData = await getVideoData(videoId);
-				const formatResult = await formatTranscript(transcript, videoData.title);
+				// Prefer title from DB summary
+				const existing = await getSummary(videoId);
+				const title = existing?.title && existing.title.trim() !== ''
+					? existing.title
+					: (await getVideoDataWithoutTranscript(videoId)).title;
+				const formatResult = await formatTranscript(transcript, title);
 				finalTranscript = formatResult.content;
 				// Use AI-generated filename with video ID suffix
 				// Remove invalid filename characters but keep Chinese characters
@@ -46,6 +60,7 @@ export const GET = async ({ url }) => {
 		const encodedFilename = encodeURIComponent(filename);
 		const contentDisposition = `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 		
+		console.log('[api/download-transcript] returning', format === 'formatted' ? 'formatted' : 'raw', 'transcript for', videoId, `(length=${finalTranscript.length})`);
 		return new Response(finalTranscript, {
 			headers: {
 				'Content-Type': contentType,

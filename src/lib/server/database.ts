@@ -4,7 +4,8 @@ import type { SummaryData } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
-    SUMMARIES: 'summaries'
+    SUMMARIES: 'summaries',
+    TRANSCRIPTS: 'transcripts'
 } as const;
 
 // Summary 相关操作
@@ -25,6 +26,8 @@ export const getSummary = async (videoId: string): Promise<SummaryData | null> =
 export const createSummary = async (summaryData: {
     videoId: string;
     title: string;
+    description: string;
+    author: string;
     summary: string;
     keyTakeaway: string;
     keyPoints: string[];
@@ -80,3 +83,62 @@ export const incrementSummaryHits = async (videoId: string): Promise<SummaryData
 
 // 组合操作 - 获取完整的视频数据
 // 单表模式不再提供组合查询与跨表检查
+
+// Transcript 相关操作
+export const upsertTranscript = async (
+    videoId: string,
+    transcript: string
+) => {
+    try {
+        const { documents, total } = await databases.listDocuments(
+            'main',
+            COLLECTIONS.TRANSCRIPTS,
+            [Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        if (total > 0) {
+            const doc = documents[0];
+            return await databases.updateDocument(
+                'main',
+                COLLECTIONS.TRANSCRIPTS,
+                doc.$id,
+                { transcript }
+            );
+        }
+        return await databases.createDocument(
+            'main',
+            COLLECTIONS.TRANSCRIPTS,
+            ID.unique(),
+            { videoId, transcript }
+        );
+    } catch (error) {
+        console.error('Failed to upsert transcript:', error);
+        throw error;
+    }
+};
+
+export const getTranscriptByVideoId = async (
+    videoId: string
+): Promise<string | null> => {
+    try {
+        const { documents, total } = await databases.listDocuments(
+            'main',
+            COLLECTIONS.TRANSCRIPTS,
+            [Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        if (total > 0) {
+            const doc = documents[0] as { transcript?: string };
+            const value = (doc.transcript ?? '') || null;
+            if (value) {
+                console.log('[db] transcript hit for', videoId, `(length=${value.length})`);
+            } else {
+                console.log('[db] transcript empty for', videoId);
+            }
+            return value;
+        }
+        console.log('[db] transcript miss for', videoId);
+        return null;
+    } catch (error) {
+        console.error('Failed to get transcript by videoId:', error);
+        return null;
+    }
+};
