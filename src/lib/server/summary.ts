@@ -4,7 +4,8 @@ import prompt from "$lib/server/prompt.md?raw";
 import type { SummaryData, VideoMeta } from '$lib/types';
 import * as undici from 'undici';
 
-const proxyAgent = new undici.ProxyAgent(PROXY_URI);
+// Only create proxy agent if PROXY_URI is available
+const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
 
 const openai = new OpenAI({
 	baseURL: OPENROUTER_BASE_URL,
@@ -14,7 +15,7 @@ const openai = new OpenAI({
 		'X-Title': 'gisttube',
 	},
 	fetchOptions: {
-		dispatcher: proxyAgent,
+		dispatcher: proxyAgent ? proxyAgent : undefined,
 	},
 });
 
