@@ -5,7 +5,27 @@
 	import GithubIcon from '@lucide/svelte/icons/github';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { page } from '$app/state';
+import { page } from '$app/state';
+import { onMount } from 'svelte';
+
+let hasSubtitles = $state<boolean | null>(null);
+
+onMount(() => {
+    // Initial state from SSR if available
+    const ssrHas = (page as any).data?.summaryData?.hasSubtitles;
+    if (typeof ssrHas === 'boolean') hasSubtitles = ssrHas;
+
+    const handler = (e: Event) => {
+        try {
+            const detail = (e as CustomEvent).detail as { hasSubtitles: boolean };
+            if (typeof detail?.hasSubtitles === 'boolean') {
+                hasSubtitles = detail.hasSubtitles;
+            }
+        } catch {}
+    };
+    window.addEventListener('yg:hasSubtitles', handler as EventListener);
+    return () => window.removeEventListener('yg:hasSubtitles', handler as EventListener);
+});
 
 	// Helper function to determine if a route is active
 	function isActiveRoute(route: string): boolean {
@@ -152,10 +172,10 @@
 				</button>
 			{/if}
 
-			{#if showDownloadButton()}
+            {#if showDownloadButton()}
 				<button
 					onclick={downloadTranscript}
-					disabled={isDownloading}
+                    disabled={isDownloading || hasSubtitles !== true}
 					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-blue-500/10 text-zinc-300 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
 					title="Download formatted transcript with AI formatting"
 				>

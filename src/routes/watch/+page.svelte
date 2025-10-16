@@ -24,8 +24,20 @@
 
 	let loading = $derived(!summaryData && !error);
 
-	onMount(() => {
-		if (!summaryData) {
+onMount(() => {
+    // 如果服务端已返回占位记录且标记为无字幕，直接显示无字幕页
+    if (summaryData && (summaryData as any).hasSubtitles === false) {
+        isNoSubtitlesError = true;
+        error = 'NO_SUBTITLES_AVAILABLE';
+        videoTitle = summaryData.title;
+        const urlVideoId = new URLSearchParams(window.location.search).get('v');
+        if (urlVideoId) {
+            videoId = urlVideoId;
+        }
+        return;
+    }
+
+    if (!summaryData) {
 			const urlVideoId = new URLSearchParams(window.location.search).get('v');
 			if (!urlVideoId) {
 				error = 'No video ID found in the URL. Please make sure the URL is correct.';
@@ -40,7 +52,7 @@
 					if (!res.ok) {
 						// Try to get a more specific error message from the API response
 						const errorData = await res.json().catch(() => ({ error: res.text() }));
-						const errorText = errorData?.error;
+						const errorText = errorData?.error || errorData?.message;
 						
 						// Check if it's a no subtitles error
 						if (res.status === 404 && errorText === 'NO_SUBTITLES_AVAILABLE') {
@@ -58,6 +70,13 @@
 							}
 							return;
 						}
+
+						// Temporary transcript failure (rate limit / network etc.)
+						if (res.status === 503 && errorText === 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE') {
+							isNoSubtitlesError = false;
+							error = 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE';
+							return;
+						}
 						
 						throw new Error(
 							errorText || `The server responded with status ${res.status}. Please try again.`
@@ -70,6 +89,8 @@
 						summaryData = data;
 						error = null; // Clear previous errors on success
 						isNoSubtitlesError = false;
+						// 通知导航栏按钮状态
+						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
 					}
 				})
 				.catch((err: Error) => {
@@ -79,11 +100,17 @@
 					if (err.message === 'NO_SUBTITLES_AVAILABLE') {
 						isNoSubtitlesError = true;
 						error = 'NO_SUBTITLES_AVAILABLE';
+						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
+					} else if (err.message === 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE') {
+						isNoSubtitlesError = false;
+						error = 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE';
+						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
 					} else {
 						error =
 							err.message ||
 							'An unknown error occurred. The video might be private or the summary could not be generated.';
 						isNoSubtitlesError = false;
+						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
 					}
 				});
 		}

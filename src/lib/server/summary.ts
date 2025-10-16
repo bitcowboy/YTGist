@@ -79,8 +79,6 @@ export const getSummary = async (videoData: VideoMeta) => {
 			throw new Error('No content received from OpenRouter');
 		}
 
-		console.log(content);
-
 		return JSON.parse(content) as SummaryData;
 	} catch (error) {
 		console.error('Failed to generate summary:', error);

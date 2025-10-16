@@ -25,9 +25,9 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
 	const author = video.snippet.channelTitle;
 	const channelId = video.snippet.channelId;
 
-	const transcript = await getTranscript(videoId);
+    const transcript = await getTranscript(videoId);
 
-	return { title, channelId, description, author, transcript };
+    return { title, channelId, description, author, transcript };
 };
 
 const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> => {
@@ -52,9 +52,9 @@ const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> =>
 	const channelId = info.basic_info.channel_id as string;
 	const description = info.basic_info.short_description as string;
 
-	const transcript = await getTranscript(videoId);
+    const transcript = await getTranscript(videoId);
 
-	return { title, channelId, description, author, transcript };
+    return { title, channelId, description, author, transcript };
 };
 
 const getVideoDataWithYouTubeAPIWithoutTranscript = async (videoId: string): Promise<Omit<VideoMeta, 'transcript'>> => {
@@ -78,7 +78,7 @@ const getVideoDataWithYouTubeAPIWithoutTranscript = async (videoId: string): Pro
 	const author = video.snippet.channelTitle;
 	const channelId = video.snippet.channelId;
 
-	return { title, channelId, description, author };
+    return { title, channelId, description, author };
 };
 
 const getVideoDataWithInnertubeWithoutTranscript = async (videoId: string): Promise<Omit<VideoMeta, 'transcript'>> => {
@@ -103,7 +103,7 @@ const getVideoDataWithInnertubeWithoutTranscript = async (videoId: string): Prom
 	const channelId = info.basic_info.channel_id as string;
 	const description = info.basic_info.short_description as string;
 
-	return { title, channelId, description, author };
+    return { title, channelId, description, author };
 };
 
 export const getVideoData = async (videoId: string): Promise<VideoMeta> => {

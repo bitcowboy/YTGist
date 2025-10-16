@@ -13,11 +13,13 @@ export const getTranscript = async (videoId: string) => {
         try {
             return await methodTwo(videoId);
         } catch (error) {
-            console.error('methodTwo failed:', error);
-            // If it's a no subtitles error, preserve it
+            // Avoid noisy stack traces for known no-subtitles cases
             if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+                // downgrade log level to debug/info
+                console.info('Transcript not available (no subtitles).');
                 throw error;
             }
+            console.warn('methodTwo failed (non-NO_SUBTITLES error):', error);
             throw new Error('Failed to get transcript: FREE_TRANSCRIPT_ENDPOINT not configured and methodTwo failed');
         }
     }
@@ -39,24 +41,26 @@ export const getTranscript = async (videoId: string) => {
             try {
                 // Try methodOne with proxy
                 return await methodOne(videoId, true);
-            } catch (error) {
-                // If it's a no subtitles error, don't try methodTwo
-                if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                    throw error;
-                }
-                console.warn('methodOne with proxy failed:', error);
+        } catch (error) {
+            // If it's a no subtitles error, don't try methodTwo
+            if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+                console.info('Transcript not available via methodOne (proxy)');
+                throw error;
             }
+            console.warn('methodOne with proxy failed:', error);
+        }
         }
 
         // Try methodTwo as last resort
         try {
             return await methodTwo(videoId);
         } catch (error) {
-            console.error('All transcript methods failed:', error);
-            // If it's a no subtitles error, preserve it
+            // If it's a no subtitles error, preserve it with low-noise log
             if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+                console.info('Transcript not available via methodTwo');
                 throw error;
             }
+            console.error('All transcript methods failed:', error);
             throw new Error('Failed to get transcript using all available methods');
         }
     }
@@ -143,6 +147,7 @@ const methodTwo = async (videoId: string) => {
         }
         
         // If it's a different error (like transcript not available), convert it
+        // console.info('Transcript not available due to methodTwo error, normalizing to NO_SUBTITLES_AVAILABLE');
         throw new Error('NO_SUBTITLES_AVAILABLE');
     }
 }
