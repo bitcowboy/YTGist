@@ -45,3 +45,25 @@ export interface SummaryData extends AppwriteDocument {
     hasSubtitles?: boolean;
     hits?: number;
 }
+
+// 聊天消息类型
+export interface ChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+}
+
+// 聊天请求类型
+export interface ChatRequest {
+    message: string;
+    videoId: string;
+    videoTitle: string;
+    summaryData: SummaryData;
+    conversationHistory?: ChatMessage[];
+}
+
+// 聊天响应类型
+export interface ChatResponse {
+    response: string;
+}

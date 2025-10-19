@@ -13,6 +13,7 @@
 	import ErrorAndRefresh from '$lib/components/summary/error-and-refresh.svelte';
 	import NoSubtitles from '$lib/components/summary/no-subtitles.svelte';
 	import FloatingLoadingIndicator from '$lib/components/summary/floating-loading-indicator.svelte';
+	import InlineChat from '$lib/components/chat/inline-chat.svelte';
 
 	const { data } = $props();
 
@@ -36,6 +37,7 @@ onMount(() => {
         }
         return;
     }
+
 
     if (!summaryData) {
 			const urlVideoId = new URLSearchParams(window.location.search).get('v');
@@ -143,6 +145,18 @@ onMount(() => {
 			<KeyPoints {summaryData} />
 			<!-- <Divider /> -->
 			<!-- <Tags {summaryData} /> -->
+		</div>
+		
+		<!-- AI Chat Section -->
+		<div class="mt-8">
+			<Divider />
+			<div class="mt-6">
+				<InlineChat 
+					videoId={videoId || summaryData.videoId} 
+					videoTitle={summaryData.title} 
+					{summaryData} 
+				/>
+			</div>
 		</div>
 	</div>
 {/if}
