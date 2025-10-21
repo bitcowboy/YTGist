@@ -7,6 +7,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 import { page } from '$app/state';
 import { onMount } from 'svelte';
+import CalendarIcon from '@lucide/svelte/icons/calendar';
 
 let hasSubtitles = $state<boolean | null>(null);
 
@@ -44,8 +45,17 @@ onMount(() => {
 		return url.pathname === '/watch' && url.searchParams.has('v');
 	});
 
+	// Check if we're on today page to show daily summary regenerate button
+	let showDailyRegenerateButton = $derived(() => {
+		const url = page.url;
+		return url.pathname === '/today';
+	});
+
 	// State for regenerate button
 	let isRegenerating = $state(false);
+	
+	// State for daily summary regenerate button
+	let isDailyRegenerating = $state(false);
 	
 	// State for download button
 	let isDownloading = $state(false);
@@ -134,6 +144,45 @@ onMount(() => {
 			isRegenerating = false;
 		}
 	}
+
+	// Function to regenerate daily summary
+	async function regenerateDailySummary() {
+		if (isDailyRegenerating) return;
+
+		isDailyRegenerating = true;
+		
+		try {
+			// Get a new nonce for the request
+			const nonceResponse = await fetch('/api/generate-nonce');
+			if (!nonceResponse.ok) {
+				throw new Error('Failed to generate nonce');
+			}
+			const { nonce } = await nonceResponse.json();
+
+			// Call the regenerate API
+			const response = await fetch(`/api/regenerate-daily-summary`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ nonce })
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error(errorData.error || 'Failed to regenerate daily summary');
+			}
+
+			// Reload the page to show the new summary
+			window.location.reload();
+		} catch (error) {
+			console.error('Error regenerating daily summary:', error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			alert(`Failed to regenerate daily summary: ${errorMessage}`);
+		} finally {
+			isDailyRegenerating = false;
+		}
+	}
 </script>
 
 <header class="sticky top-0 z-50 border-b border-zinc-800/50 bg-zinc-950/50 backdrop-blur-lg">
@@ -172,6 +221,20 @@ onMount(() => {
 				</button>
 			{/if}
 
+			{#if showDailyRegenerateButton()}
+				<button
+					onclick={regenerateDailySummary}
+					disabled={isDailyRegenerating}
+					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-blue-500/10 text-zinc-300 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+					title="Regenerate daily summary"
+				>
+					<RefreshCwIcon
+						class="h-4 w-4 transition-colors duration-200 group-hover:text-blue-500 {isDailyRegenerating ? 'animate-spin' : ''}"
+					/>
+					<span class="hidden sm:block">{isDailyRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
+				</button>
+			{/if}
+
             {#if showDownloadButton()}
 				<button
 					onclick={downloadTranscript}
@@ -188,6 +251,16 @@ onMount(() => {
 		</div>
 
 		<div class="flex items-center gap-2">
+			<a
+				href="/today"
+				target="_blank"
+				rel="noopener noreferrer"
+				title="View today's watched videos"
+				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
+			>
+				<CalendarIcon class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" />
+				<span class="hidden sm:block">Today</span>
+			</a>
 			<a
 				href="https://github.com/shajidhasan/youtubegist"
 				target="_blank"

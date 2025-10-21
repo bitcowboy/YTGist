@@ -5,7 +5,8 @@ import type { SummaryData } from '$lib/types.js';
 // 数据库表名常量
 export const COLLECTIONS = {
     SUMMARIES: 'summaries',
-    TRANSCRIPTS: 'transcripts'
+    TRANSCRIPTS: 'transcripts',
+    DAILY_SUMMARIES: 'daily-summaries'
 } as const;
 
 // Summary 相关操作
@@ -141,4 +142,120 @@ export const getTranscriptByVideoId = async (
         console.error('Failed to get transcript by videoId:', error);
         return null;
     }
+};
+
+// Daily Summary 相关操作
+export interface DailySummaryData {
+    $id: string;
+    $createdAt: string;
+    $updatedAt: string;
+    date: string; // YYYY-MM-DD format
+    overview: string;
+    themes: Array<{
+        theme: string;
+        videos: Array<{
+            title: string;
+            keyTakeaway: string;
+            videoId: string;
+        }>;
+        summary: string;
+    }>;
+    keyInsights: string[];
+    videoCount: number;
+}
+
+export const getDailySummary = async (date: string): Promise<DailySummaryData | null> => {
+    try {
+        const { documents } = await databases.listDocuments<DailySummaryData>(
+            'main',
+            COLLECTIONS.DAILY_SUMMARIES,
+            [Query.equal('date', date), Query.limit(1)]
+        );
+        
+        if (documents.length === 0) return null;
+        
+        const doc = documents[0];
+        return {
+            ...doc,
+            themes: JSON.parse(doc.themes as string), // 反序列化 JSON 字符串
+            keyInsights: JSON.parse(doc.keyInsights as string) // 反序列化 JSON 字符串
+        };
+    } catch (error) {
+        console.error('Failed to get daily summary:', error);
+        return null;
+    }
+};
+
+export const createDailySummary = async (dailySummaryData: {
+    date: string;
+    overview: string;
+    themes: Array<{
+        theme: string;
+        videos: Array<{
+            title: string;
+            keyTakeaway: string;
+            videoId: string;
+        }>;
+        summary: string;
+    }>;
+    keyInsights: string[];
+    videoCount: number;
+}): Promise<DailySummaryData> => {
+    return await databases.createDocument<DailySummaryData>(
+        'main',
+        COLLECTIONS.DAILY_SUMMARIES,
+        ID.unique(),
+        {
+            ...dailySummaryData,
+            themes: JSON.stringify(dailySummaryData.themes), // 序列化为 JSON 字符串
+            keyInsights: JSON.stringify(dailySummaryData.keyInsights) // 序列化为 JSON 字符串
+        }
+    );
+};
+
+export const updateDailySummary = async (date: string, updateData: Partial<{
+    overview: string;
+    themes: Array<{
+        theme: string;
+        videos: Array<{
+            title: string;
+            keyTakeaway: string;
+            videoId: string;
+        }>;
+        summary: string;
+    }>;
+    keyInsights: string[];
+    videoCount: number;
+}>): Promise<DailySummaryData> => {
+    const existing = await getDailySummary(date);
+    if (!existing) {
+        throw new Error('Daily summary not found');
+    }
+    
+    // 序列化复杂对象
+    const serializedData = {
+        ...updateData,
+        ...(updateData.themes && { themes: JSON.stringify(updateData.themes) }),
+        ...(updateData.keyInsights && { keyInsights: JSON.stringify(updateData.keyInsights) })
+    };
+    
+    return await databases.updateDocument<DailySummaryData>(
+        'main',
+        COLLECTIONS.DAILY_SUMMARIES,
+        existing.$id,
+        serializedData
+    );
+};
+
+export const deleteDailySummary = async (date: string): Promise<void> => {
+    const existing = await getDailySummary(date);
+    if (!existing) {
+        throw new Error('Daily summary not found');
+    }
+    
+    await databases.deleteDocument(
+        'main',
+        COLLECTIONS.DAILY_SUMMARIES,
+        existing.$id
+    );
 };

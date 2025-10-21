@@ -14,6 +14,7 @@
 	import NoSubtitles from '$lib/components/summary/no-subtitles.svelte';
 	import FloatingLoadingIndicator from '$lib/components/summary/floating-loading-indicator.svelte';
 	import InlineChat from '$lib/components/chat/inline-chat.svelte';
+import { addTodayHistoryEntry } from '$lib/client/today-history';
 
 	const { data } = $props();
 
@@ -39,7 +40,7 @@ onMount(() => {
     }
 
 
-    if (!summaryData) {
+	if (!summaryData) {
 			const urlVideoId = new URLSearchParams(window.location.search).get('v');
 			if (!urlVideoId) {
 				error = 'No video ID found in the URL. Please make sure the URL is correct.';
@@ -86,15 +87,16 @@ onMount(() => {
 					}
 					return res.json();
 				})
-				.then((data: SummaryData) => {
-					if (data) {
-						summaryData = data;
-						error = null; // Clear previous errors on success
-						isNoSubtitlesError = false;
-						// 通知导航栏按钮状态
-						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
-					}
-				})
+		.then((data: SummaryData) => {
+			if (data) {
+				summaryData = data;
+				error = null; // Clear previous errors on success
+				isNoSubtitlesError = false;
+				// 通知导航栏按钮状态
+				window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
+				addTodayHistoryEntry(data);
+			}
+		})
 				.catch((err: Error) => {
 					console.error('Failed to fetch summary:', err);
 					
@@ -107,15 +109,19 @@ onMount(() => {
 						isNoSubtitlesError = false;
 						error = 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE';
 						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
-					} else {
-						error =
-							err.message ||
-							'An unknown error occurred. The video might be private or the summary could not be generated.';
-						isNoSubtitlesError = false;
-						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
-					}
+	} else {
+			error =
+				err.message ||
+				'An unknown error occurred. The video might be private or the summary could not be generated.';
+			isNoSubtitlesError = false;
+			window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
+		}
 				});
 		}
+
+	if (summaryData) {
+		addTodayHistoryEntry(summaryData);
+	}
 	});
 </script>
 

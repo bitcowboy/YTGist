@@ -91,6 +91,16 @@ export const POST = async () => {
         await ensureStringAttr(db, 'transcripts', transcriptExisting, 'transcript', 8000000, true);
         await ensureUniqueIndex(db, 'transcripts', 'unique_videoId_tr', 'videoId');
 
+        // daily-summaries (cache daily AI summaries)
+        await ensureCollection(db, 'daily-summaries', 'Daily Summaries', ['create("any")','read("any")','update("any")','delete("any")']);
+        const dailySummaryExisting = await getExistingAttributeKeys(db, 'daily-summaries');
+        await ensureStringAttr(db, 'daily-summaries', dailySummaryExisting, 'date', 10, true); // YYYY-MM-DD format
+        await ensureStringAttr(db, 'daily-summaries', dailySummaryExisting, 'overview', 2000, true);
+        await ensureStringAttr(db, 'daily-summaries', dailySummaryExisting, 'themes', 10000, true); // JSON string
+        await ensureStringAttr(db, 'daily-summaries', dailySummaryExisting, 'keyInsights', 2000, true); // JSON string
+        await ensureIntegerAttr(db, 'daily-summaries', dailySummaryExisting, 'videoCount', true, 0);
+        await ensureUniqueIndex(db, 'daily-summaries', 'unique_date', 'date');
+
         return json({ success: true });
     } catch (e: any) {
         return error(500, `Init failed: ${e?.message || e}`);
