@@ -31,6 +31,9 @@ export interface VideoMeta {
     author: string;
     hasSubtitles: boolean;
     transcript: string;
+    commentsSummary?: string;
+    commentsKeyPoints?: string[];
+    commentsCount?: number;
 }
 
 export interface SummaryData extends AppwriteDocument {
@@ -45,6 +48,9 @@ export interface SummaryData extends AppwriteDocument {
     channelId?: string;
     hasSubtitles?: boolean;
     hits?: number;
+    commentsSummary?: string;
+    commentsKeyPoints?: string[];
+    commentsCount?: number;
 }
 
 // 聊天消息类型

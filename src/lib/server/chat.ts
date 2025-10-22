@@ -80,6 +80,14 @@ ${summaryData.keyPoints?.join('\n') || '无'}
 核心术语:
 ${summaryData.coreTerms?.join(', ') || '无'}
 
+${summaryData.commentsSummary ? `观众评论总结:
+${summaryData.commentsSummary}
+
+观众关注要点:
+${summaryData.commentsKeyPoints?.join('\n') || '无'}
+
+评论数量: ${summaryData.commentsCount || 0} 条` : '注意: 该视频暂无观众评论数据'}
+
 ${transcript ? `原始字幕内容:
 ${transcript}` : '注意: 该视频没有可用的字幕内容'}
 		`.trim();

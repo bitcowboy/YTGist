@@ -8,8 +8,9 @@
 	import BanIcon from '@lucide/svelte/icons/ban';
 import { page } from '$app/state';
 import { onMount } from 'svelte';
-import CalendarIcon from '@lucide/svelte/icons/calendar';
-import { addToBlockList, removeFromBlockList, isChannelBlocked, getBlockedChannels } from '$lib/client/block-list';
+	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import { addToBlockList, removeFromBlockList, isChannelBlocked, getBlockedChannels } from '$lib/client/block-list';
+	import { goto } from '$app/navigation';
 
 let hasSubtitles = $state<boolean | null>(null);
 let currentChannelId = $state<string | null>(null);
@@ -69,11 +70,13 @@ onMount(() => {
     window.addEventListener('yg:hasSubtitles', handler as EventListener);
     window.addEventListener('yg:blockListUpdated', blockListHandler as EventListener);
     window.addEventListener('yg:channelInfo', channelInfoHandler as EventListener);
+    window.addEventListener('keydown', handleKeydown as EventListener);
     
     return () => {
         window.removeEventListener('yg:hasSubtitles', handler as EventListener);
         window.removeEventListener('yg:blockListUpdated', blockListHandler as EventListener);
         window.removeEventListener('yg:channelInfo', channelInfoHandler as EventListener);
+        window.removeEventListener('keydown', handleKeydown as EventListener);
     };
 });
 
@@ -106,6 +109,12 @@ onMount(() => {
 		return url.pathname === '/today';
 	});
 
+	// Check if we're on daily report page to show regenerate button
+	let showDailyReportRegenerateButton = $derived(() => {
+		const url = page.url;
+		return url.pathname === '/daily-report' && url.searchParams.has('date');
+	});
+
 	// State for regenerate button
 	let isRegenerating = $state(false);
 	
@@ -117,6 +126,11 @@ onMount(() => {
 
 	// State for block button
 	let isBlocking = $state(false);
+
+	// State for daily report modal
+	let showDailyReportModal = $state(false);
+	let selectedDate = $state('');
+	let isGeneratingReport = $state(false);
 
 	// Function to download formatted transcript
 	async function downloadTranscript() {
@@ -242,6 +256,51 @@ onMount(() => {
 		}
 	}
 
+	// Function to regenerate daily report summary
+	async function regenerateDailyReportSummary() {
+		if (isDailyRegenerating) return;
+
+		isDailyRegenerating = true;
+		
+		try {
+			// Get the date from URL parameters
+			const dateParam = page.url.searchParams.get('date');
+			if (!dateParam) {
+				throw new Error('Date parameter is required');
+			}
+
+			// Get a new nonce for the request
+			const nonceResponse = await fetch('/api/generate-nonce');
+			if (!nonceResponse.ok) {
+				throw new Error('Failed to generate nonce');
+			}
+			const { nonce } = await nonceResponse.json();
+
+			// Call the regenerate API with the specific date
+			const response = await fetch(`/api/regenerate-daily-summary`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ nonce, date: dateParam })
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+				throw new Error(errorData.error || 'Failed to regenerate daily report summary');
+			}
+
+			// Reload the page to show the new summary
+			window.location.reload();
+		} catch (error) {
+			console.error('Error regenerating daily report summary:', error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			alert(`Failed to regenerate daily report summary: ${errorMessage}`);
+		} finally {
+			isDailyRegenerating = false;
+		}
+	}
+
 	// Function to block/unblock channel
 	async function blockChannel() {
 		if (!currentChannelId || !currentChannelName || isBlocking) return;
@@ -263,6 +322,57 @@ onMount(() => {
 			alert(`Failed to ${isChannelBlockedState ? 'unblock' : 'block'} channel. Please try again.`);
 		} finally {
 			isBlocking = false;
+		}
+	}
+
+	// Function to open daily report modal
+	function openDailyReport() {
+		// Set default date to today
+		const today = new Date();
+		selectedDate = today.toISOString().slice(0, 10);
+		showDailyReportModal = true;
+	}
+
+	// Function to close daily report modal
+	function closeDailyReport() {
+		showDailyReportModal = false;
+		selectedDate = '';
+	}
+
+	// Handle ESC key to close modal
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape' && showDailyReportModal) {
+			closeDailyReport();
+		}
+	}
+
+	// Function to generate daily report
+	async function generateDailyReport() {
+		if (!selectedDate || isGeneratingReport) return;
+
+		isGeneratingReport = true;
+		
+		try {
+			// Store the selected date before closing the modal
+			const dateToUse = selectedDate;
+			
+			// Close the modal
+			showDailyReportModal = false;
+			
+			// Open daily report in a new tab/window
+			const dateParam = encodeURIComponent(dateToUse);
+			const url = `/daily-report?date=${dateParam}`;
+			const fullUrl = window.location.origin + url;
+			
+			window.open(fullUrl, '_blank', 'noopener,noreferrer');
+			
+		} catch (error) {
+			console.error('Error opening daily report:', error);
+			const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+			alert(`Failed to open daily report: ${errorMessage}`);
+		} finally {
+			isGeneratingReport = false;
+			selectedDate = ''; // Reset the selected date
 		}
 	}
 </script>
@@ -317,6 +427,20 @@ onMount(() => {
 				</button>
 			{/if}
 
+			{#if showDailyReportRegenerateButton()}
+				<button
+					onclick={regenerateDailyReportSummary}
+					disabled={isDailyRegenerating}
+					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-blue-500/10 text-zinc-300 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+					title="Regenerate daily report summary"
+				>
+					<RefreshCwIcon
+						class="h-4 w-4 transition-colors duration-200 group-hover:text-blue-500 {isDailyRegenerating ? 'animate-spin' : ''}"
+					/>
+					<span class="hidden sm:block">{isDailyRegenerating ? 'Regenerating...' : 'Regenerate'}</span>
+				</button>
+			{/if}
+
 			{#if showDownloadButton()}
 				<button
 					onclick={downloadTranscript}
@@ -360,16 +484,14 @@ onMount(() => {
 		</div>
 
 		<div class="flex items-center gap-2">
-			<a
-				href="/today"
-				target="_blank"
-				rel="noopener noreferrer"
-				title="View today's watched videos"
+			<button
+				onclick={openDailyReport}
+				title="Generate daily report for any date"
 				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
 			>
 				<CalendarIcon class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" />
-				<span class="hidden sm:block">Today</span>
-			</a>
+				<span class="hidden sm:block">Daily Report</span>
+			</button>
 			<a
 				href="https://github.com/shajidhasan/youtubegist"
 				target="_blank"
@@ -383,3 +505,60 @@ onMount(() => {
 		</div>
 	</nav>
 </header>
+
+<!-- Daily Report Modal -->
+{#if showDailyReportModal}
+	<div 
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+		onclick={(e) => e.target === e.currentTarget && closeDailyReport()}
+		onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && closeDailyReport()}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="modal-title"
+		tabindex="-1"
+	>
+		<div class="mx-4 w-full max-w-md rounded-xl border border-zinc-700/50 bg-zinc-900 p-6 shadow-2xl">
+			<div class="mb-4 flex items-center justify-between">
+				<h3 id="modal-title" class="text-lg font-semibold text-zinc-100">Daily Report</h3>
+				<button
+					onclick={closeDailyReport}
+					class="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-zinc-700/50 hover:text-zinc-200"
+					title="Close"
+				>
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+			
+			<div class="mb-6">
+				<label for="date-select" class="mb-2 block text-sm font-medium text-zinc-300">
+					Select Date
+				</label>
+				<input
+					id="date-select"
+					type="date"
+					bind:value={selectedDate}
+					max={new Date().toISOString().slice(0, 10)}
+					class="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+				/>
+			</div>
+			
+			<div class="flex gap-3">
+				<button
+					onclick={closeDailyReport}
+					class="flex-1 rounded-lg border border-zinc-600 bg-transparent px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700/50 hover:text-zinc-100"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={generateDailyReport}
+					disabled={!selectedDate || isGeneratingReport}
+					class="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{isGeneratingReport ? 'Opening...' : 'Open Report'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

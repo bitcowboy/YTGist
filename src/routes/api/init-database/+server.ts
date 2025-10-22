@@ -82,6 +82,10 @@ export const POST = async () => {
         await ensureStringAttr(db, 'summaries', existing, 'coreTerms', 100, false, true);
         await ensureBooleanAttr(db, 'summaries', existing, 'hasSubtitles', false, false);
         await ensureIntegerAttr(db, 'summaries', existing, 'hits', false, undefined, undefined, 0);
+        // 新增评论相关字段
+        await ensureStringAttr(db, 'summaries', existing, 'commentsSummary', 1000, false);
+        await ensureStringAttr(db, 'summaries', existing, 'commentsKeyPoints', 500, false, true);
+        await ensureIntegerAttr(db, 'summaries', existing, 'commentsCount', false, 0);
         await ensureUniqueIndex(db, 'summaries', 'unique_videoId', 'videoId');
 
         // transcripts (store raw transcript)

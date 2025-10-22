@@ -7,19 +7,27 @@ import type { SummaryData } from '$lib/types.js';
 
 export const POST = async ({ request }) => {
     try {
-        const { nonce } = await request.json();
+        const { nonce, date } = await request.json();
 
         if (!nonce || !validateNonce(nonce)) {
             return error(401, 'Invalid or expired nonce!');
         }
 
-        // Get today's date
-        const today = new Date();
-        const todayDate = today.toISOString().slice(0, 10);
+        // Use provided date or default to today
+        const targetDate = date || new Date().toISOString().slice(0, 10);
         
-        // Get today's summaries
-        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
-        const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+        // Validate date format if provided
+        if (date) {
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(date)) {
+                return error(400, 'Invalid date format. Expected YYYY-MM-DD');
+            }
+        }
+        
+        // Get the specified date's summaries
+        const targetDateObj = new Date(targetDate);
+        const startOfDay = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 0, 0, 0, 0);
+        const endOfDay = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 23, 59, 59, 999);
         
         const summaries = await databases.listDocuments<SummaryData>(
             'main',
@@ -33,7 +41,7 @@ export const POST = async ({ request }) => {
         );
 
         if (summaries.documents.length === 0) {
-            return error(400, 'No videos found for today');
+            return error(400, `No videos found for ${targetDate}`);
         }
 
         // Generate new daily summary
@@ -41,11 +49,11 @@ export const POST = async ({ request }) => {
         const newSummary = await generateDailySummary(summaries.documents);
 
         // Check if daily summary already exists
-        const existingSummary = await getDailySummary(todayDate);
+        const existingSummary = await getDailySummary(targetDate);
         
         if (existingSummary) {
             // Update existing summary
-            await updateDailySummary(todayDate, {
+            await updateDailySummary(targetDate, {
                 overview: newSummary.overview,
                 themes: newSummary.themes,
                 keyInsights: newSummary.keyInsights,
@@ -54,7 +62,7 @@ export const POST = async ({ request }) => {
         } else {
             // Create new summary
             await createDailySummary({
-                date: todayDate,
+                date: targetDate,
                 overview: newSummary.overview,
                 themes: newSummary.themes,
                 keyInsights: newSummary.keyInsights,

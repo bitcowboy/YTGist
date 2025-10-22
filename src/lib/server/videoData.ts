@@ -2,6 +2,8 @@ import { YOUTUBE_DATA_API_KEY, PROXY_URI } from "$env/static/private";
 import type { VideoMeta } from "$lib/types";
 import { Innertube, Platform, UniversalCache } from "youtubei.js";
 import { getTranscript } from "$lib/server/transcript";
+import { getComments } from "$lib/server/comments";
+import { generateCommentsSummary } from "$lib/server/comments-summary";
 import { ProxyAgent } from 'undici';
 
 const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> => {
@@ -27,7 +29,34 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
 
     const transcript = await getTranscript(videoId);
 
-    return { title, channelId, description, author, transcript };
+    // 获取评论并生成评论总结
+    let commentsSummary = '';
+    let commentsKeyPoints: string[] = [];
+    let commentsCount = 0;
+    
+    try {
+        const commentsData = await getComments(videoId, 50);
+        commentsCount = commentsData.totalCount;
+        
+        if (commentsData.comments.length > 0) {
+            const commentsSummaryData = await generateCommentsSummary(commentsData.comments, title);
+            commentsSummary = commentsSummaryData.commentsSummary;
+            commentsKeyPoints = commentsSummaryData.commentsKeyPoints;
+        }
+    } catch (error) {
+        console.warn('Failed to get comments summary:', error);
+    }
+
+    return { 
+        title, 
+        channelId, 
+        description, 
+        author, 
+        transcript,
+        commentsSummary,
+        commentsKeyPoints,
+        commentsCount
+    };
 };
 
 const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> => {
@@ -54,7 +83,34 @@ const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> =>
 
     const transcript = await getTranscript(videoId);
 
-    return { title, channelId, description, author, transcript };
+    // 获取评论并生成评论总结
+    let commentsSummary = '';
+    let commentsKeyPoints: string[] = [];
+    let commentsCount = 0;
+    
+    try {
+        const commentsData = await getComments(videoId, 50);
+        commentsCount = commentsData.totalCount;
+        
+        if (commentsData.comments.length > 0) {
+            const commentsSummaryData = await generateCommentsSummary(commentsData.comments, title);
+            commentsSummary = commentsSummaryData.commentsSummary;
+            commentsKeyPoints = commentsSummaryData.commentsKeyPoints;
+        }
+    } catch (error) {
+        console.warn('Failed to get comments summary:', error);
+    }
+
+    return { 
+        title, 
+        channelId, 
+        description, 
+        author, 
+        transcript,
+        commentsSummary,
+        commentsKeyPoints,
+        commentsCount
+    };
 };
 
 const getVideoDataWithYouTubeAPIWithoutTranscript = async (videoId: string): Promise<Omit<VideoMeta, 'transcript'>> => {

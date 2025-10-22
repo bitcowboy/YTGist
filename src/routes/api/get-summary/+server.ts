@@ -73,7 +73,10 @@ export const GET = async ({ url }) => {
                 keyPoints: unsavedSummaryData.keyPoints,
                 keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
                 coreTerms: unsavedSummaryData.coreTerms,
-                hasSubtitles: true
+                hasSubtitles: true,
+                commentsSummary: clamp(videoData.commentsSummary || '', 1000),
+                commentsKeyPoints: videoData.commentsKeyPoints || [],
+                commentsCount: videoData.commentsCount || 0
             });
         } else {
             summaryData = await databases.createDocument<SummaryData>(
@@ -90,7 +93,10 @@ export const GET = async ({ url }) => {
                     keyPoints: unsavedSummaryData.keyPoints,
                     keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
                     coreTerms: unsavedSummaryData.coreTerms,
-                    hasSubtitles: true
+                    hasSubtitles: true,
+                    commentsSummary: clamp(videoData.commentsSummary || '', 1000),
+                    commentsKeyPoints: videoData.commentsKeyPoints || [],
+                    commentsCount: videoData.commentsCount || 0
                 }
             );
         }

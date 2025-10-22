@@ -15,6 +15,8 @@
 	import ChannelBlocked from '$lib/components/summary/channel-blocked.svelte';
 	import FloatingLoadingIndicator from '$lib/components/summary/floating-loading-indicator.svelte';
 	import InlineChat from '$lib/components/chat/inline-chat.svelte';
+	import CommentsSummary from '$lib/components/summary/comments-summary.svelte';
+	import CommentsKeyPoints from '$lib/components/summary/comments-key-points.svelte';
 import { addTodayHistoryEntry } from '$lib/client/today-history';
 
 	const { data } = $props();
@@ -251,6 +253,9 @@ onMount(() => {
 			<Summary {summaryData} />
 			<!-- <Divider /> -->
 			<KeyPoints {summaryData} />
+			<!-- <Divider /> -->
+			<CommentsSummary {summaryData} />
+			<CommentsKeyPoints {summaryData} />
 			<!-- <Divider /> -->
 			<!-- <Tags {summaryData} /> -->
 		</div>
