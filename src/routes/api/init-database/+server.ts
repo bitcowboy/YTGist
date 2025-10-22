@@ -73,11 +73,11 @@ export const POST = async () => {
         const existing = await getExistingAttributeKeys(db, 'summaries');
         await ensureStringAttr(db, 'summaries', existing, 'videoId', 11, true);
         await ensureStringAttr(db, 'summaries', existing, 'title', 100, true);
-        await ensureStringAttr(db, 'summaries', existing, 'summary', 1000, true);
-        await ensureStringAttr(db, 'summaries', existing, 'description', 500, true);
+        await ensureStringAttr(db, 'summaries', existing, 'summary', 5000, true);
+        await ensureStringAttr(db, 'summaries', existing, 'description', 5000, true);
         await ensureStringAttr(db, 'summaries', existing, 'author', 100, true);
         await ensureStringAttr(db, 'summaries', existing, 'channelId', 50, false);
-        await ensureStringAttr(db, 'summaries', existing, 'keyTakeaway', 200, true);
+        await ensureStringAttr(db, 'summaries', existing, 'keyTakeaway', 500, true);
         await ensureStringAttr(db, 'summaries', existing, 'keyPoints', 500, false, true);
         await ensureStringAttr(db, 'summaries', existing, 'coreTerms', 100, false, true);
         await ensureBooleanAttr(db, 'summaries', existing, 'hasSubtitles', false, false);

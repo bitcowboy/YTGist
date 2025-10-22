@@ -39,14 +39,31 @@ export const createSummary = async (summaryData: {
     hasSubtitles?: boolean;
     publishedAt?: string;
 }): Promise<SummaryData> => {
+    // Clamp fields to Appwrite attribute limits to avoid document_invalid_structure
+    const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
+    const safeKeyPoints = (summaryData.keyPoints || []).map((kp) => clamp(kp, 200)).slice(0, 50);
+    const safeCoreTerms = (summaryData.coreTerms || []).map((ct) => clamp(ct, 100)).slice(0, 50);
+
+    const payload = {
+        videoId: summaryData.videoId,
+        title: clamp(summaryData.title, 100),
+        description: clamp(summaryData.description, 5000),
+        author: clamp(summaryData.author, 100),
+        channelId: summaryData.channelId,
+        summary: clamp(summaryData.summary, 5000),
+        keyTakeaway: clamp(summaryData.keyTakeaway, 500),
+        keyPoints: safeKeyPoints,
+        coreTerms: safeCoreTerms,
+        hasSubtitles: summaryData.hasSubtitles,
+        publishedAt: summaryData.publishedAt,
+        hits: 0
+    } as any;
+
     return await databases.createDocument<SummaryData>(
         'main',
         COLLECTIONS.SUMMARIES,
         ID.unique(),
-        {
-            ...summaryData,
-            hits: 0
-        }
+        payload
     );
 };
 

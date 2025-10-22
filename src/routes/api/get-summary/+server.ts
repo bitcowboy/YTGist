@@ -66,12 +66,12 @@ export const GET = async ({ url }) => {
             const doc = existing.documents[0];
             summaryData = await databases.updateDocument<SummaryData>('main', 'summaries', doc.$id, {
                 title: clamp(videoData.title, 100),
-                description: clamp(videoData.description, 500),
+                description: clamp(videoData.description, 5000),
                 author: clamp(videoData.author, 100),
                 channelId: videoData.channelId,
-                summary: clamp(unsavedSummaryData.summary, 1000),
+                summary: clamp(unsavedSummaryData.summary, 5000),
                 keyPoints: unsavedSummaryData.keyPoints,
-                keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
+                keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 500),
                 coreTerms: unsavedSummaryData.coreTerms,
                 hasSubtitles: true,
                 publishedAt: videoData.publishedAt,
@@ -87,12 +87,12 @@ export const GET = async ({ url }) => {
                 {
                     videoId,
                     title: clamp(videoData.title, 100),
-                    description: clamp(videoData.description, 500),
+                    description: clamp(videoData.description, 5000),
                     author: clamp(videoData.author, 100),
                     channelId: videoData.channelId,
-                    summary: clamp(unsavedSummaryData.summary, 1000),
+                    summary: clamp(unsavedSummaryData.summary, 5000),
                     keyPoints: unsavedSummaryData.keyPoints,
-                    keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
+                    keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 500),
                     coreTerms: unsavedSummaryData.coreTerms,
                     hasSubtitles: true,
                     publishedAt: videoData.publishedAt,
@@ -169,7 +169,7 @@ export const GET = async ({ url }) => {
                         const doc = existing.documents[0];
                         await databases.updateDocument<SummaryData>('main', 'summaries', doc.$id, {
                             title: clamp(basic.title, 100),
-                            description: clamp(basic.description, 500),
+                            description: clamp(basic.description, 5000),
                             author: clamp(basic.author, 100),
                             channelId: basic.channelId,
                             summary: '',
@@ -183,7 +183,7 @@ export const GET = async ({ url }) => {
                         await databases.createDocument<SummaryData>('main', 'summaries', ID.unique(), {
                             videoId,
                             title: clamp(basic.title, 100),
-                            description: clamp(basic.description, 500),
+                            description: clamp(basic.description, 5000),
                             author: clamp(basic.author, 100),
                             channelId: basic.channelId,
                             summary: '',
