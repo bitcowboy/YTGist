@@ -1,5 +1,5 @@
 import { databases } from '$lib/server/appwrite.js';
-import { upsertTranscript } from '$lib/server/database.js';
+import { upsertTranscript, isChannelBlocked } from '$lib/server/database.js';
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData, getVideoDataWithoutTranscript } from '$lib/server/videoData.js';
 import { validateNonce } from '$lib/server/nonce.js';
@@ -21,7 +21,31 @@ export const GET = async ({ url }) => {
 
     try {
         // 正常流程
+        console.log(`Processing video ${videoId}`);
+        
+        // First, let's check if there are any blocked channels at all
+        try {
+            const { getBlockedChannels } = await import('$lib/server/database.js');
+            const blockedChannels = await getBlockedChannels();
+            console.log(`Total blocked channels in database: ${blockedChannels.length}`);
+            if (blockedChannels.length > 0) {
+                console.log('Blocked channels:', blockedChannels.map(bc => ({ channelId: bc.channelId, channelName: bc.channelName })));
+            }
+        } catch (dbError) {
+            console.warn('Failed to check blocked channels:', dbError);
+        }
+        
         const videoData = await getVideoData(videoId);
+        console.log(`Got video data for ${videoId}:`, { channelId: videoData.channelId, author: videoData.author });
+
+        // 检查频道是否被阻止
+        const isBlocked = await isChannelBlocked(videoData.channelId);
+        console.log(`Channel ${videoData.channelId} blocked status:`, isBlocked);
+        if (isBlocked) {
+            console.log(`Channel ${videoData.channelId} (${videoData.author}) is blocked, refusing to process video ${videoId}`);
+            console.log('Returning 403 error with CHANNEL_BLOCKED message');
+            return error(403, 'CHANNEL_BLOCKED');
+        }
 
         const unsavedSummaryData = await getSummary(videoData);
 
@@ -44,6 +68,7 @@ export const GET = async ({ url }) => {
                 title: clamp(videoData.title, 100),
                 description: clamp(videoData.description, 500),
                 author: clamp(videoData.author, 100),
+                channelId: videoData.channelId,
                 summary: clamp(unsavedSummaryData.summary, 1000),
                 keyPoints: unsavedSummaryData.keyPoints,
                 keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
@@ -60,6 +85,7 @@ export const GET = async ({ url }) => {
                     title: clamp(videoData.title, 100),
                     description: clamp(videoData.description, 500),
                     author: clamp(videoData.author, 100),
+                    channelId: videoData.channelId,
                     summary: clamp(unsavedSummaryData.summary, 1000),
                     keyPoints: unsavedSummaryData.keyPoints,
                     keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
@@ -72,6 +98,45 @@ export const GET = async ({ url }) => {
         return json(summaryData);
     } catch (e) {
         console.error('Failed to process video:', e);
+        console.error('Error details:', {
+            message: e instanceof Error ? e.message : String(e),
+            stack: e instanceof Error ? e.stack : undefined,
+            name: e instanceof Error ? e.name : 'Unknown'
+        });
+
+        // First, try to get basic video data to check if channel is blocked
+        let channelBlocked = false;
+        try {
+            console.log(`Attempting to get basic video data for ${videoId} to check block status`);
+            const basicVideoData = await getVideoDataWithoutTranscript(videoId);
+            console.log(`Got basic video data:`, { channelId: basicVideoData.channelId, author: basicVideoData.author });
+            
+            const isBlocked = await isChannelBlocked(basicVideoData.channelId);
+            console.log(`Channel ${basicVideoData.channelId} blocked status (from catch block):`, isBlocked);
+            if (isBlocked) {
+                console.log(`Channel ${basicVideoData.channelId} (${basicVideoData.author}) is blocked, refusing to process video ${videoId}`);
+                console.log('Setting channelBlocked flag to true');
+                channelBlocked = true;
+            }
+        } catch (basicDataError) {
+            console.warn('Failed to get basic video data for block check:', basicDataError);
+            console.warn('Basic data error details:', {
+                message: basicDataError instanceof Error ? basicDataError.message : String(basicDataError),
+                stack: basicDataError instanceof Error ? basicDataError.stack : undefined
+            });
+            
+            // If the basic data error is a 403 CHANNEL_BLOCKED error, set the flag
+            if (basicDataError instanceof Error && basicDataError.message.includes('CHANNEL_BLOCKED')) {
+                console.log('Detected CHANNEL_BLOCKED in basic data error, setting channelBlocked flag');
+                channelBlocked = true;
+            }
+        }
+        
+        // If channel is blocked, return 403 immediately
+        if (channelBlocked) {
+            console.log('Channel is blocked, returning 403 error with CHANNEL_BLOCKED message');
+            return error(403, 'CHANNEL_BLOCKED');
+        }
 
         // 明确区分：没有字幕 vs 暂时获取失败
         if (e instanceof Error) {
@@ -79,6 +144,14 @@ export const GET = async ({ url }) => {
             if (e.message === 'NO_SUBTITLES_AVAILABLE') {
                 try {
                     const basic = await getVideoDataWithoutTranscript(videoId);
+                    
+                    // 检查频道是否被阻止
+                    const isBlocked = await isChannelBlocked(basic.channelId);
+                    if (isBlocked) {
+                        console.log(`Channel ${basic.channelId} (${basic.author}) is blocked, refusing to process video ${videoId}`);
+                        console.log('Returning 403 error with CHANNEL_BLOCKED message (no subtitles case)');
+                        return error(403, 'CHANNEL_BLOCKED');
+                    }
                     const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
                     const existing = await databases.listDocuments<SummaryData>('main', 'summaries', [
                         Query.equal('videoId', videoId),
@@ -90,6 +163,7 @@ export const GET = async ({ url }) => {
                             title: clamp(basic.title, 100),
                             description: clamp(basic.description, 500),
                             author: clamp(basic.author, 100),
+                            channelId: basic.channelId,
                             summary: '',
                             keyPoints: [],
                             keyTakeaway: '',
@@ -102,6 +176,7 @@ export const GET = async ({ url }) => {
                             title: clamp(basic.title, 100),
                             description: clamp(basic.description, 500),
                             author: clamp(basic.author, 100),
+                            channelId: basic.channelId,
                             summary: '',
                             keyPoints: [],
                             keyTakeaway: '',

@@ -42,6 +42,7 @@ export interface SummaryData extends AppwriteDocument {
     coreTerms: string[];
     description: string;
     author: string;
+    channelId?: string;
     hasSubtitles?: boolean;
     hits?: number;
 }
@@ -66,4 +67,11 @@ export interface ChatRequest {
 // 聊天响应类型
 export interface ChatResponse {
     response: string;
+}
+
+// 被阻止的频道类型
+export interface BlockedChannel extends AppwriteDocument {
+    channelId: string;
+    channelName: string;
+    blockedAt: string;
 }

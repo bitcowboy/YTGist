@@ -76,6 +76,7 @@ export const POST = async () => {
         await ensureStringAttr(db, 'summaries', existing, 'summary', 1000, true);
         await ensureStringAttr(db, 'summaries', existing, 'description', 500, true);
         await ensureStringAttr(db, 'summaries', existing, 'author', 100, true);
+        await ensureStringAttr(db, 'summaries', existing, 'channelId', 50, false);
         await ensureStringAttr(db, 'summaries', existing, 'keyTakeaway', 200, true);
         await ensureStringAttr(db, 'summaries', existing, 'keyPoints', 500, false, true);
         await ensureStringAttr(db, 'summaries', existing, 'coreTerms', 100, false, true);
@@ -100,6 +101,14 @@ export const POST = async () => {
         await ensureStringAttr(db, 'daily-summaries', dailySummaryExisting, 'keyInsights', 2000, true); // JSON string
         await ensureIntegerAttr(db, 'daily-summaries', dailySummaryExisting, 'videoCount', true, 0);
         await ensureUniqueIndex(db, 'daily-summaries', 'unique_date', 'date');
+
+        // blocked_channels (store blocked channel information)
+        await ensureCollection(db, 'blocked_channels', 'Blocked Channels', ['create("any")','read("any")','update("any")','delete("any")']);
+        const blockedChannelsExisting = await getExistingAttributeKeys(db, 'blocked_channels');
+        await ensureStringAttr(db, 'blocked_channels', blockedChannelsExisting, 'channelId', 50, true);
+        await ensureStringAttr(db, 'blocked_channels', blockedChannelsExisting, 'channelName', 100, true);
+        await ensureStringAttr(db, 'blocked_channels', blockedChannelsExisting, 'blockedAt', 30, true); // ISO string
+        await ensureUniqueIndex(db, 'blocked_channels', 'unique_channelId', 'channelId');
 
         return json({ success: true });
     } catch (e: any) {

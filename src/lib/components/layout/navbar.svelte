@@ -5,16 +5,32 @@
 	import GithubIcon from '@lucide/svelte/icons/github';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import BanIcon from '@lucide/svelte/icons/ban';
 import { page } from '$app/state';
 import { onMount } from 'svelte';
 import CalendarIcon from '@lucide/svelte/icons/calendar';
+import { addToBlockList, removeFromBlockList, isChannelBlocked, getBlockedChannels } from '$lib/client/block-list';
 
 let hasSubtitles = $state<boolean | null>(null);
+let currentChannelId = $state<string | null>(null);
+let currentChannelName = $state<string | null>(null);
+let isChannelBlockedState = $state<boolean>(false);
 
 onMount(() => {
     // Initial state from SSR if available
     const ssrHas = (page as any).data?.summaryData?.hasSubtitles;
     if (typeof ssrHas === 'boolean') hasSubtitles = ssrHas;
+
+    // Get channel info from SSR data if available
+    const ssrData = (page as any).data?.summaryData;
+    if (ssrData?.author && ssrData?.channelId) {
+        currentChannelName = ssrData.author;
+        currentChannelId = ssrData.channelId;
+        // Check if channel is blocked asynchronously
+        isChannelBlocked(ssrData.channelId).then(blocked => {
+            isChannelBlockedState = blocked;
+        });
+    }
 
     const handler = (e: Event) => {
         try {
@@ -24,8 +40,41 @@ onMount(() => {
             }
         } catch {}
     };
+    
+    const blockListHandler = (e: Event) => {
+        try {
+            const detail = (e as CustomEvent).detail as { action: string; channel?: any; channelId?: string };
+            if (detail.action === 'added' && detail.channel?.channelId === currentChannelId) {
+                isChannelBlockedState = true;
+            } else if (detail.action === 'removed' && detail.channelId === currentChannelId) {
+                isChannelBlockedState = false;
+            }
+        } catch {}
+    };
+
+    const channelInfoHandler = (e: Event) => {
+        try {
+            const detail = (e as CustomEvent).detail as { channelId: string; channelName: string };
+            if (detail.channelId && detail.channelName) {
+                currentChannelId = detail.channelId;
+                currentChannelName = detail.channelName;
+                // Check if channel is blocked asynchronously
+                isChannelBlocked(detail.channelId).then(blocked => {
+                    isChannelBlockedState = blocked;
+                });
+            }
+        } catch {}
+    };
+
     window.addEventListener('yg:hasSubtitles', handler as EventListener);
-    return () => window.removeEventListener('yg:hasSubtitles', handler as EventListener);
+    window.addEventListener('yg:blockListUpdated', blockListHandler as EventListener);
+    window.addEventListener('yg:channelInfo', channelInfoHandler as EventListener);
+    
+    return () => {
+        window.removeEventListener('yg:hasSubtitles', handler as EventListener);
+        window.removeEventListener('yg:blockListUpdated', blockListHandler as EventListener);
+        window.removeEventListener('yg:channelInfo', channelInfoHandler as EventListener);
+    };
 });
 
 	// Helper function to determine if a route is active
@@ -45,6 +94,12 @@ onMount(() => {
 		return url.pathname === '/watch' && url.searchParams.has('v');
 	});
 
+	// Check if we're on a video page to show block button
+	let showBlockButton = $derived(() => {
+		const url = page.url;
+		return url.pathname === '/watch' && url.searchParams.has('v');
+	});
+
 	// Check if we're on today page to show daily summary regenerate button
 	let showDailyRegenerateButton = $derived(() => {
 		const url = page.url;
@@ -59,6 +114,9 @@ onMount(() => {
 	
 	// State for download button
 	let isDownloading = $state(false);
+
+	// State for block button
+	let isBlocking = $state(false);
 
 	// Function to download formatted transcript
 	async function downloadTranscript() {
@@ -183,6 +241,30 @@ onMount(() => {
 			isDailyRegenerating = false;
 		}
 	}
+
+	// Function to block/unblock channel
+	async function blockChannel() {
+		if (!currentChannelId || !currentChannelName || isBlocking) return;
+
+		isBlocking = true;
+		
+		try {
+			if (isChannelBlockedState) {
+				// Unblock channel
+				await removeFromBlockList(currentChannelId);
+				alert(`Channel "${currentChannelName}" has been unblocked. Videos from this channel will now be processed again.`);
+			} else {
+				// Block channel
+				await addToBlockList(currentChannelId, currentChannelName);
+				alert(`Channel "${currentChannelName}" has been blocked. Videos from this channel will no longer be processed.`);
+			}
+		} catch (error) {
+			console.error('Error toggling channel block status:', error);
+			alert(`Failed to ${isChannelBlockedState ? 'unblock' : 'block'} channel. Please try again.`);
+		} finally {
+			isBlocking = false;
+		}
+	}
 </script>
 
 <header class="sticky top-0 z-50 border-b border-zinc-800/50 bg-zinc-950/50 backdrop-blur-lg">
@@ -235,7 +317,7 @@ onMount(() => {
 				</button>
 			{/if}
 
-            {#if showDownloadButton()}
+			{#if showDownloadButton()}
 				<button
 					onclick={downloadTranscript}
                     disabled={isDownloading || hasSubtitles !== true}
@@ -246,6 +328,33 @@ onMount(() => {
 						class="h-4 w-4 transition-colors duration-200 group-hover:text-blue-500 {isDownloading ? 'animate-pulse' : ''}"
 					/>
 					<span class="hidden sm:block">{isDownloading ? 'Processing...' : 'Transcript'}</span>
+				</button>
+			{/if}
+
+			{#if showBlockButton()}
+				<button
+					onclick={blockChannel}
+					disabled={isBlocking || !currentChannelId || !currentChannelName}
+					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 {isChannelBlockedState ? 'hover:bg-green-500/10 text-zinc-300 hover:text-green-300' : 'hover:bg-red-500/10 text-zinc-300 hover:text-red-300'} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+					title={
+						!currentChannelId || !currentChannelName 
+							? 'Loading channel information...' 
+							: isChannelBlockedState 
+								? `Unblock channel "${currentChannelName}"` 
+								: `Block channel "${currentChannelName}"`
+					}
+				>
+					<BanIcon
+						class="h-4 w-4 transition-colors duration-200 {isChannelBlockedState ? 'group-hover:text-green-500' : 'group-hover:text-red-500'} {isBlocking ? 'animate-pulse' : ''}"
+					/>
+					<span class="hidden sm:block">
+						{!currentChannelId || !currentChannelName 
+							? 'Loading...' 
+							: isChannelBlockedState 
+								? (isBlocking ? 'Unblocking...' : 'Unblock Channel')
+								: (isBlocking ? 'Blocking...' : 'Block Channel')
+						}
+					</span>
 				</button>
 			{/if}
 		</div>

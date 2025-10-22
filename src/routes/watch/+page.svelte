@@ -12,6 +12,7 @@
 	import Skeletons from '$lib/components/summary/skeletons.svelte';
 	import ErrorAndRefresh from '$lib/components/summary/error-and-refresh.svelte';
 	import NoSubtitles from '$lib/components/summary/no-subtitles.svelte';
+	import ChannelBlocked from '$lib/components/summary/channel-blocked.svelte';
 	import FloatingLoadingIndicator from '$lib/components/summary/floating-loading-indicator.svelte';
 	import InlineChat from '$lib/components/chat/inline-chat.svelte';
 import { addTodayHistoryEntry } from '$lib/client/today-history';
@@ -36,8 +37,17 @@ onMount(() => {
         if (urlVideoId) {
             videoId = urlVideoId;
         }
+        
+        // 发送频道信息给navbar，即使没有字幕
+        if (summaryData.author && summaryData.channelId) {
+            window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+                detail: { channelId: summaryData.channelId, channelName: summaryData.author } 
+            }));
+        }
         return;
     }
+
+    // 服务端已经处理了block检查，这里不需要客户端检查
 
 
 	if (!summaryData) {
@@ -54,22 +64,81 @@ onMount(() => {
 				.then(async (res) => {
 					if (!res.ok) {
 						// Try to get a more specific error message from the API response
-						const errorData = await res.json().catch(() => ({ error: res.text() }));
-						const errorText = errorData?.error || errorData?.message;
+						let errorText;
+						let responseText;
+						try {
+							responseText = await res.text();
+							console.log('Raw response text:', responseText);
+							
+							// Try to parse as JSON
+							try {
+								const errorData = JSON.parse(responseText);
+								errorText = errorData?.error || errorData?.message || errorData;
+								console.log('API Error (JSON):', {
+									status: res.status,
+									errorText: errorText,
+									errorData: errorData
+								});
+							} catch (jsonError) {
+								// If JSON parsing fails, use the text directly
+								errorText = responseText;
+								console.log('API Error (Text):', {
+									status: res.status,
+									errorText: errorText
+								});
+							}
+						} catch (textError) {
+							errorText = `HTTP ${res.status}`;
+							console.log('API Error (Status only):', {
+								status: res.status,
+								errorText: errorText
+							});
+						}
 						
-						// Check if it's a no subtitles error
-						if (res.status === 404 && errorText === 'NO_SUBTITLES_AVAILABLE') {
-							isNoSubtitlesError = true;
-							error = 'NO_SUBTITLES_AVAILABLE';
-							// Try to get video title for better UX
+						// Check if it's a channel blocked error
+						if (res.status === 403 && (errorText === 'CHANNEL_BLOCKED' || responseText === 'CHANNEL_BLOCKED')) {
+							console.log('Channel blocked detected, setting error state');
+							error = 'CHANNEL_BLOCKED';
+							videoId = urlVideoId;
+							// Try to get video data for better UX
 							try {
 								const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
 								if (videoDataRes.ok) {
 									const videoData = await videoDataRes.json();
 									videoTitle = videoData.title;
+									// 发送频道信息给navbar
+									if (videoData.author && videoData.channelId) {
+										window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+											detail: { channelId: videoData.channelId, channelName: videoData.author } 
+										}));
+									}
 								}
 							} catch (e) {
-								console.warn('Failed to get video title:', e);
+								console.warn('Failed to get video data:', e);
+							}
+							// Don't throw an error, just return to prevent the catch block from executing
+							return;
+						}
+
+						// Check if it's a no subtitles error
+						if (res.status === 404 && errorText === 'NO_SUBTITLES_AVAILABLE') {
+							isNoSubtitlesError = true;
+							error = 'NO_SUBTITLES_AVAILABLE';
+							// Try to get video data for better UX
+							try {
+								const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
+								if (videoDataRes.ok) {
+									const videoData = await videoDataRes.json();
+									videoTitle = videoData.title;
+									// 发送频道信息给navbar，即使没有字幕
+									if (videoData.author && videoData.channelId) {
+										window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+											detail: { channelId: videoData.channelId, channelName: videoData.author } 
+										}));
+									}
+								}
+							} catch (e) {
+								console.warn('Failed to get video data:', e);
 							}
 							return;
 						}
@@ -81,6 +150,7 @@ onMount(() => {
 							return;
 						}
 						
+						// Only throw an error if we haven't handled it above
 						throw new Error(
 							errorText || `The server responded with status ${res.status}. Please try again.`
 						);
@@ -94,14 +164,41 @@ onMount(() => {
 				isNoSubtitlesError = false;
 				// 通知导航栏按钮状态
 				window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
+				// 通知导航栏频道信息
+				window.dispatchEvent(new CustomEvent('yg:channelInfo', { detail: { channelId: data.channelId, channelName: data.author } }));
 				addTodayHistoryEntry(data);
 			}
 		})
 				.catch((err: Error) => {
 					console.error('Failed to fetch summary:', err);
 					
-					// Check if it's a no subtitles error
-					if (err.message === 'NO_SUBTITLES_AVAILABLE') {
+					// Check if it's a channel blocked error
+					if (err.message === 'CHANNEL_BLOCKED' || err.message?.includes('CHANNEL_BLOCKED')) {
+						error = 'CHANNEL_BLOCKED';
+						videoId = urlVideoId;
+						// Try to get video data for better UX
+						fetch(`/api/get-video-data?v=${urlVideoId}`)
+							.then(videoDataRes => {
+								if (videoDataRes.ok) {
+									return videoDataRes.json();
+								}
+								return null;
+							})
+							.then(videoData => {
+								if (videoData) {
+									videoTitle = videoData.title;
+									// 发送频道信息给navbar
+									if (videoData.author && videoData.channelId) {
+										window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+											detail: { channelId: videoData.channelId, channelName: videoData.author } 
+										}));
+									}
+								}
+							})
+							.catch(e => {
+								console.warn('Failed to get video data:', e);
+							});
+					} else if (err.message === 'NO_SUBTITLES_AVAILABLE') {
 						isNoSubtitlesError = true;
 						error = 'NO_SUBTITLES_AVAILABLE';
 						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
@@ -109,7 +206,7 @@ onMount(() => {
 						isNoSubtitlesError = false;
 						error = 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE';
 						window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
-	} else {
+					} else {
 			error =
 				err.message ||
 				'An unknown error occurred. The video might be private or the summary could not be generated.';
@@ -120,6 +217,8 @@ onMount(() => {
 		}
 
 	if (summaryData) {
+		// 通知导航栏频道信息
+		window.dispatchEvent(new CustomEvent('yg:channelInfo', { detail: { channelId: summaryData.channelId, channelName: summaryData.author } }));
 		addTodayHistoryEntry(summaryData);
 	}
 	});
@@ -133,11 +232,14 @@ onMount(() => {
 	{/if}
 </svelte:head>
 
+
 {#if loading}
 	<FloatingLoadingIndicator />
 	<Skeletons />
 {:else if error && isNoSubtitlesError}
 	<NoSubtitles videoTitle={videoTitle} videoId={videoId} />
+{:else if error === 'CHANNEL_BLOCKED'}
+	<ChannelBlocked videoTitle={videoTitle} videoId={videoId} />
 {:else if error}
 	<ErrorAndRefresh {error} />
 {:else if summaryData}
