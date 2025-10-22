@@ -1,0 +1,33 @@
+name: Process Followed Channels
+
+on:
+  schedule:
+    # 每 6 小时运行一次 (UTC 时间)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  process-followed-channels:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Process Followed Channels
+        run: |
+          echo "Processing followed channels..."
+          
+          # 调用 API 端点
+          response=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"secret\":\"${{ secrets.CRON_SECRET }}\"}" \
+            "${{ secrets.API_BASE_URL }}/api/process-followed-channels")
+          
+          echo "Response: $response"
+          
+          # 检查响应
+          if echo "$response" | grep -q '"success":true'; then
+            echo "✅ Followed channels processed successfully"
+          else
+            echo "❌ Failed to process followed channels"
+            echo "Response: $response"
+            exit 1
+          fi

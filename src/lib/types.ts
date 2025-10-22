@@ -31,6 +31,7 @@ export interface VideoMeta {
     author: string;
     hasSubtitles: boolean;
     transcript: string;
+    publishedAt?: string; // ISO 8601 date string
     commentsSummary?: string;
     commentsKeyPoints?: string[];
     commentsCount?: number;
@@ -47,6 +48,7 @@ export interface SummaryData extends AppwriteDocument {
     author: string;
     channelId?: string;
     hasSubtitles?: boolean;
+    publishedAt?: string; // ISO 8601 date string
     hits?: number;
     commentsSummary?: string;
     commentsKeyPoints?: string[];
@@ -80,4 +82,15 @@ export interface BlockedChannel extends AppwriteDocument {
     channelId: string;
     channelName: string;
     blockedAt: string;
+}
+
+// 关注的频道类型
+export interface FollowedChannel extends AppwriteDocument {
+    channelId: string;
+    channelName: string;
+    channelUrl?: string;
+    thumbnailUrl?: string;
+    followedAt: string;
+    lastCheckedAt?: string;
+    isActive: boolean;
 }

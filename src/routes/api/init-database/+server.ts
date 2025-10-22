@@ -81,6 +81,7 @@ export const POST = async () => {
         await ensureStringAttr(db, 'summaries', existing, 'keyPoints', 500, false, true);
         await ensureStringAttr(db, 'summaries', existing, 'coreTerms', 100, false, true);
         await ensureBooleanAttr(db, 'summaries', existing, 'hasSubtitles', false, false);
+        await ensureStringAttr(db, 'summaries', existing, 'publishedAt', 50, false); // ISO 8601 date string
         await ensureIntegerAttr(db, 'summaries', existing, 'hits', false, undefined, undefined, 0);
         // 新增评论相关字段
         await ensureStringAttr(db, 'summaries', existing, 'commentsSummary', 1000, false);
@@ -113,6 +114,19 @@ export const POST = async () => {
         await ensureStringAttr(db, 'blocked_channels', blockedChannelsExisting, 'channelName', 100, true);
         await ensureStringAttr(db, 'blocked_channels', blockedChannelsExisting, 'blockedAt', 30, true); // ISO string
         await ensureUniqueIndex(db, 'blocked_channels', 'unique_channelId', 'channelId');
+
+        // followed_channels (store followed channel information)
+        await ensureCollection(db, 'followed_channels', 'Followed Channels', ['create("any")','read("any")','update("any")','delete("any")']);
+        const followedChannelsExisting = await getExistingAttributeKeys(db, 'followed_channels');
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'channelId', 50, true);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'channelName', 100, true);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'channelUrl', 200, false);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'thumbnailUrl', 200, false);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'followedAt', 30, true);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'lastCheckedAt', 30, false);
+        await ensureBooleanAttr(db, 'followed_channels', followedChannelsExisting, 'isActive', true);
+        await ensureUniqueIndex(db, 'followed_channels', 'unique_channelId_follow', 'channelId');
+
 
         return json({ success: true });
     } catch (e: any) {

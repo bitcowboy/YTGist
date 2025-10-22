@@ -26,8 +26,40 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
 	const description = video.snippet.description;
 	const author = video.snippet.channelTitle;
 	const channelId = video.snippet.channelId;
+	let publishedAt = video.snippet.publishedAt; // ISO 8601 format from YouTube API
+	
+	console.log(`[YouTube Data API] Video ${videoId}:`, {
+		title,
+		publishedAt,
+		publishedAt_type: typeof publishedAt
+	});
 
-    const transcript = await getTranscript(videoId);
+	if (publishedAt) {
+		const publishedTime = Date.parse(publishedAt);
+		if (Number.isFinite(publishedTime)) {
+			const now = Date.now();
+			// YouTube sometimes returns future times for scheduled premieres; ignore if farther than 1 hour ahead
+			if (publishedTime - now > 60 * 60 * 1000) {
+				console.warn(`[YouTube Data API] Ignoring future publishedAt for video ${videoId}: ${publishedAt}`);
+				publishedAt = undefined;
+			}
+		}
+	}
+
+    let transcript = '';
+    let hasSubtitles = false;
+    
+    try {
+        transcript = await getTranscript(videoId);
+        hasSubtitles = true;
+    } catch (error) {
+        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+            console.info(`Video ${videoId} has no subtitles`);
+            hasSubtitles = false;
+        } else {
+            throw error;
+        }
+    }
 
     // 获取评论并生成评论总结
     let commentsSummary = '';
@@ -53,6 +85,8 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
         description, 
         author, 
         transcript,
+        hasSubtitles,
+        publishedAt,
         commentsSummary,
         commentsKeyPoints,
         commentsCount
@@ -80,8 +114,72 @@ const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> =>
 	const author = info.basic_info.author as string;
 	const channelId = info.basic_info.channel_id as string;
 	const description = info.basic_info.short_description as string;
+	
+	// Debug: Log all possible date fields from Innertube
+	console.log(`[Innertube] Video ${videoId} - basic_info fields:`, {
+		upload_date: info.basic_info.upload_date,
+		publish_date: info.basic_info.publish_date,
+		upload_date_type: typeof info.basic_info.upload_date,
+		publish_date_type: typeof info.basic_info.publish_date,
+		start_timestamp: (info.basic_info as any).start_timestamp,
+		view_count: info.basic_info.view_count
+	});
+	
+	// Get published date from Innertube
+	let publishedAt: string | undefined;
+	const dateCandidates: Array<{ source: string; value?: string }> = [];
 
-    const transcript = await getTranscript(videoId);
+	if (info.basic_info.upload_date) {
+		dateCandidates.push({ source: 'basic_info.upload_date', value: info.basic_info.upload_date });
+	}
+	if (info.basic_info.publish_date) {
+		dateCandidates.push({ source: 'basic_info.publish_date', value: info.basic_info.publish_date });
+	}
+	const microformat = info.microformat?.microformatDataRenderer;
+	if (microformat?.uploadDate) {
+		dateCandidates.push({ source: 'microformat.uploadDate', value: microformat.uploadDate });
+	}
+	if (microformat?.publishDate) {
+		dateCandidates.push({ source: 'microformat.publishDate', value: microformat.publishDate });
+	}
+
+	for (const candidate of dateCandidates) {
+		if (!candidate.value) continue;
+		try {
+			const iso = new Date(candidate.value).toISOString();
+			const ts = Date.parse(iso);
+			if (!Number.isFinite(ts)) continue;
+			const now = Date.now();
+			if (ts - now > 60 * 60 * 1000) {
+				console.warn(`[Innertube] Candidate ${candidate.source} is in the future (${iso}); ignoring`);
+				continue;
+			}
+			publishedAt = iso;
+			console.log(`[Innertube] Using ${candidate.source}: ${publishedAt}`);
+			break;
+		} catch (e) {
+			console.warn(`[Innertube] Failed to parse ${candidate.source}:`, candidate.value);
+		}
+	}
+
+	if (!publishedAt) {
+		console.log(`[Innertube] No reliable published date found for video ${videoId}`);
+	}
+
+    let transcript = '';
+    let hasSubtitles = false;
+    
+    try {
+        transcript = await getTranscript(videoId);
+        hasSubtitles = true;
+    } catch (error) {
+        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+            console.info(`Video ${videoId} has no subtitles`);
+            hasSubtitles = false;
+        } else {
+            throw error;
+        }
+    }
 
     // 获取评论并生成评论总结
     let commentsSummary = '';
@@ -107,6 +205,8 @@ const getVideoDataWithInnertube = async (videoId: string): Promise<VideoMeta> =>
         description, 
         author, 
         transcript,
+        hasSubtitles,
+        publishedAt,
         commentsSummary,
         commentsKeyPoints,
         commentsCount

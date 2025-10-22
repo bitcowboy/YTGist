@@ -1,13 +1,14 @@
 import { databases } from './appwrite.js';
 import { ID, Query } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, AppwriteDocument } from '$lib/types.js';
+import type { SummaryData, BlockedChannel, FollowedChannel, AppwriteDocument } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
     SUMMARIES: 'summaries',
     TRANSCRIPTS: 'transcripts',
     DAILY_SUMMARIES: 'daily-summaries',
-    BLOCKED_CHANNELS: 'blocked_channels'
+    BLOCKED_CHANNELS: 'blocked_channels',
+    FOLLOWED_CHANNELS: 'followed_channels'
 } as const;
 
 // Summary 相关操作
@@ -30,11 +31,13 @@ export const createSummary = async (summaryData: {
     title: string;
     description: string;
     author: string;
+    channelId?: string;
     summary: string;
     keyTakeaway: string;
     keyPoints: string[];
     coreTerms: string[];
     hasSubtitles?: boolean;
+    publishedAt?: string;
 }): Promise<SummaryData> => {
     return await databases.createDocument<SummaryData>(
         'main',
@@ -488,5 +491,94 @@ export const invalidateDailySummariesContainingChannel = async (channelId: strin
     } catch (error) {
         console.error('Failed to invalidate daily summaries:', error);
         // 不抛出错误，因为这不是关键操作
+    }
+};
+
+// Follow Channel 相关操作
+export const getFollowedChannels = async (): Promise<FollowedChannel[]> => {
+    try {
+        const { documents } = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('isActive', true), Query.orderDesc('$createdAt')]
+        );
+        return documents;
+    } catch (error) {
+        console.error('Failed to get followed channels:', error);
+        return [];
+    }
+};
+
+export const addFollowedChannel = async (channelId: string, channelName: string, channelUrl?: string, thumbnailUrl?: string): Promise<FollowedChannel> => {
+    try {
+        // 检查是否已经存在
+        const existing = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('channelId', channelId), Query.limit(1)]
+        );
+        
+        if (existing.documents.length > 0) {
+            // 如果频道已经被关注，激活它
+            return await databases.updateDocument<FollowedChannel>(
+                'main',
+                COLLECTIONS.FOLLOWED_CHANNELS,
+                existing.documents[0].$id,
+                { isActive: true, followedAt: new Date().toISOString() }
+            );
+        }
+        
+        return await databases.createDocument<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            ID.unique(),
+            {
+                channelId,
+                channelName,
+                channelUrl,
+                thumbnailUrl,
+                followedAt: new Date().toISOString(),
+                isActive: true
+            }
+        );
+    } catch (error) {
+        console.error('Failed to add followed channel:', error);
+        throw error;
+    }
+};
+
+export const removeFollowedChannel = async (channelId: string): Promise<void> => {
+    try {
+        const { documents } = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('channelId', channelId), Query.limit(1)]
+        );
+        
+        if (documents.length > 0) {
+            await databases.updateDocument<FollowedChannel>(
+                'main',
+                COLLECTIONS.FOLLOWED_CHANNELS,
+                documents[0].$id,
+                { isActive: false }
+            );
+        }
+    } catch (error) {
+        console.error('Failed to remove followed channel:', error);
+        throw error;
+    }
+};
+
+export const isChannelFollowed = async (channelId: string): Promise<boolean> => {
+    try {
+        const { documents } = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('channelId', channelId), Query.equal('isActive', true), Query.limit(1)]
+        );
+        return documents.length > 0;
+    } catch (error) {
+        console.error('Failed to check if channel is followed:', error);
+        return false;
     }
 };

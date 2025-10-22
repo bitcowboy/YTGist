@@ -74,6 +74,7 @@ export const GET = async ({ url }) => {
                 keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
                 coreTerms: unsavedSummaryData.coreTerms,
                 hasSubtitles: true,
+                publishedAt: videoData.publishedAt,
                 commentsSummary: clamp(videoData.commentsSummary || '', 1000),
                 commentsKeyPoints: videoData.commentsKeyPoints || [],
                 commentsCount: videoData.commentsCount || 0
@@ -94,6 +95,7 @@ export const GET = async ({ url }) => {
                     keyTakeaway: clamp(unsavedSummaryData.keyTakeaway, 200),
                     coreTerms: unsavedSummaryData.coreTerms,
                     hasSubtitles: true,
+                    publishedAt: videoData.publishedAt,
                     commentsSummary: clamp(videoData.commentsSummary || '', 1000),
                     commentsKeyPoints: videoData.commentsKeyPoints || [],
                     commentsCount: videoData.commentsCount || 0
@@ -174,7 +176,8 @@ export const GET = async ({ url }) => {
                             keyPoints: [],
                             keyTakeaway: '',
                             coreTerms: [],
-                            hasSubtitles: false
+                            hasSubtitles: false,
+                            publishedAt: basic.publishedAt
                         });
                     } else {
                         await databases.createDocument<SummaryData>('main', 'summaries', ID.unique(), {
@@ -188,6 +191,7 @@ export const GET = async ({ url }) => {
                             keyTakeaway: '',
                             coreTerms: [],
                             hasSubtitles: false,
+                            publishedAt: basic.publishedAt,
                             hits: 0
                         });
                     }
