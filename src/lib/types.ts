@@ -92,5 +92,8 @@ export interface FollowedChannel extends AppwriteDocument {
     thumbnailUrl?: string;
     followedAt: string;
     lastCheckedAt?: string;
+    lastProcessedVideoId?: string; // 最新处理的视频ID，用于增量更新
+    lastProcessedVideoTitle?: string; // 最新处理的视频标题
+    lastProcessedVideoPublishedAt?: string; // 最新处理的视频发布时间
     isActive: boolean;
 }

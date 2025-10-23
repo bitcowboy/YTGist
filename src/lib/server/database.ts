@@ -599,3 +599,56 @@ export const isChannelFollowed = async (channelId: string): Promise<boolean> => 
         return false;
     }
 };
+
+// 更新频道最新处理的视频信息
+export const updateChannelLastProcessedVideo = async (
+    channelId: string, 
+    videoId: string, 
+    videoTitle: string, 
+    publishedAt: string
+): Promise<void> => {
+    try {
+        const { documents } = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('channelId', channelId), Query.limit(1)]
+        );
+        
+        if (documents.length > 0) {
+            await databases.updateDocument<FollowedChannel>(
+                'main',
+                COLLECTIONS.FOLLOWED_CHANNELS,
+                documents[0].$id,
+                {
+                    lastProcessedVideoId: videoId,
+                    lastProcessedVideoTitle: videoTitle,
+                    lastProcessedVideoPublishedAt: publishedAt,
+                    lastCheckedAt: new Date().toISOString()
+                }
+            );
+            console.log(`Updated last processed video for channel ${channelId}: ${videoId} - ${videoTitle}`);
+        }
+    } catch (error) {
+        console.error(`Failed to update last processed video for channel ${channelId}:`, error);
+        throw error;
+    }
+};
+
+// 获取频道最新处理的视频ID
+export const getChannelLastProcessedVideoId = async (channelId: string): Promise<string | null> => {
+    try {
+        const { documents } = await databases.listDocuments<FollowedChannel>(
+            'main',
+            COLLECTIONS.FOLLOWED_CHANNELS,
+            [Query.equal('channelId', channelId), Query.limit(1)]
+        );
+        
+        if (documents.length > 0 && documents[0].lastProcessedVideoId) {
+            return documents[0].lastProcessedVideoId;
+        }
+        return null;
+    } catch (error) {
+        console.error(`Failed to get last processed video ID for channel ${channelId}:`, error);
+        return null;
+    }
+};

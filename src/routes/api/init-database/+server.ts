@@ -124,6 +124,9 @@ export const POST = async () => {
         await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'thumbnailUrl', 200, false);
         await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'followedAt', 30, true);
         await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'lastCheckedAt', 30, false);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'lastProcessedVideoId', 50, false);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'lastProcessedVideoTitle', 200, false);
+        await ensureStringAttr(db, 'followed_channels', followedChannelsExisting, 'lastProcessedVideoPublishedAt', 30, false);
         await ensureBooleanAttr(db, 'followed_channels', followedChannelsExisting, 'isActive', true);
         await ensureUniqueIndex(db, 'followed_channels', 'unique_channelId_follow', 'channelId');
 
