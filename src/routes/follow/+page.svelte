@@ -73,6 +73,14 @@
     }
 
     async function toggleFollow(channelId: string, channelName: string, isCurrentlyFollowed: boolean) {
+        // 如果是取消关注，显示确认对话框
+        if (isCurrentlyFollowed) {
+            const confirmed = confirm(`确定要取消关注频道 "${channelName}" 吗？\n\n取消关注后，该频道的新视频将不再自动生成总结。`);
+            if (!confirmed) {
+                return;
+            }
+        }
+
         try {
             const nonceResponse = await fetch('/api/generate-nonce');
             const { nonce } = await nonceResponse.json();
