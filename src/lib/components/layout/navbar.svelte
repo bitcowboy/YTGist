@@ -2,7 +2,6 @@
 	import Logo from '$lib/components/shared/logo.svelte';
 	import HeartIcon from '@lucide/svelte/icons/heart';
 	import HelpCircleIcon from '@lucide/svelte/icons/help-circle';
-	import GithubIcon from '@lucide/svelte/icons/github';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import BanIcon from '@lucide/svelte/icons/ban';
@@ -478,8 +477,15 @@ onMount(() => {
 		}
 	}
 
-	// Function to open project dropdown
-	async function openProjectDropdown() {
+	// Function to toggle project dropdown
+	async function toggleProjectDropdown() {
+		// If dropdown is already open, close it
+		if (showProjectDropdown) {
+			closeProjectDropdown();
+			return;
+		}
+		
+		// If dropdown is closed, open it
 		const videoId = page.url.searchParams.get('v');
 		if (!videoId) {
 			alert('No video ID found');
@@ -729,7 +735,7 @@ onMount(() => {
 			{#if showBlockButton()}
 				<div class="relative">
 					<button
-						onclick={openProjectDropdown}
+						onclick={toggleProjectDropdown}
 						class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-purple-500/10 text-zinc-300 hover:text-purple-300"
 						title="Add video to project"
 					>
@@ -816,16 +822,6 @@ onMount(() => {
 				<CalendarIcon class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" />
 				<span class="hidden sm:block">Daily Report</span>
 			</button>
-			<a
-				href="https://github.com/shajidhasan/youtubegist"
-				target="_blank"
-				title="GitHub link"
-				rel="noopener noreferrer"
-				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
-			>
-				<GithubIcon class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" />
-				<span class="hidden sm:block">GitHub</span>
-			</a>
 		</div>
 	</nav>
 </header>
