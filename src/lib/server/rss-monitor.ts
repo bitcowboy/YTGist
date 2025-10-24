@@ -112,7 +112,7 @@ export const parseRSSFeed = async (rssUrl: string, days: number = 7, maxVideos: 
                 try {
                     // 检查是否为YouTube Shorts
                     if (isYouTubeShorts(item)) {
-                        console.log(`Skipping YouTube Shorts: ${item.title}`);
+                        // console.log(`Skipping YouTube Shorts: ${item.title}`);
                         continue;
                     }
 
@@ -149,7 +149,7 @@ export const parseRSSFeed = async (rssUrl: string, days: number = 7, maxVideos: 
             
             if (attempt < maxRetries) {
                 console.log(`Retrying in 2 seconds...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
     }
@@ -383,7 +383,7 @@ export const getMultipleChannelsIncrementalRSSVideos = async (
         
         // 批次间稍作延迟，避免过于频繁的请求
         if (i + maxConcurrent < channelEntries.length) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
     }
 
