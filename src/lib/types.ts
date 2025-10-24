@@ -97,3 +97,17 @@ export interface FollowedChannel extends AppwriteDocument {
     lastProcessedVideoPublishedAt?: string; // 最新处理的视频发布时间
     isActive: boolean;
 }
+
+// 项目类型
+export interface Project extends AppwriteDocument {
+    name: string;
+    createdAt: string;
+}
+
+// 项目视频类型
+export interface ProjectVideo extends AppwriteDocument {
+    projectId: string;
+    videoId: string;
+    addedAt: string;
+    order: number;
+}

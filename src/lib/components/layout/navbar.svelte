@@ -13,6 +13,7 @@ import { onMount } from 'svelte';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import { addToBlockList, removeFromBlockList, isChannelBlocked, getBlockedChannels } from '$lib/client/block-list';
 	import { goto } from '$app/navigation';
+	import { fetchProjects, createProject, addVideoToProject, removeVideoFromProject } from '$lib/client/projects';
 
 let hasSubtitles = $state<boolean | null>(null);
 let currentChannelId = $state<string | null>(null);
@@ -102,6 +103,7 @@ onMount(() => {
     window.addEventListener('yg:followListUpdated', followListHandler as EventListener);
     window.addEventListener('yg:channelInfo', channelInfoHandler as EventListener);
     window.addEventListener('keydown', handleKeydown as EventListener);
+    window.addEventListener('click', handleGlobalClick as EventListener);
     
     return () => {
         window.removeEventListener('yg:hasSubtitles', handler as EventListener);
@@ -109,6 +111,7 @@ onMount(() => {
         window.removeEventListener('yg:followListUpdated', followListHandler as EventListener);
         window.removeEventListener('yg:channelInfo', channelInfoHandler as EventListener);
         window.removeEventListener('keydown', handleKeydown as EventListener);
+        window.removeEventListener('click', handleGlobalClick as EventListener);
     };
 });
 
@@ -166,6 +169,15 @@ onMount(() => {
 	let showDailyReportModal = $state(false);
 	let selectedDate = $state('');
 	let isGeneratingReport = $state(false);
+
+	// State for project dropdown
+	let showProjectDropdown = $state(false);
+	let projects = $state<any[]>([]);
+	let newProjectName = $state('');
+	let isCreatingProject = $state(false);
+	let isAddingToProject = $state(false);
+	let currentVideoId = $state<string | null>(null);
+	let showNewProjectModal = $state(false);
 
 	// Function to download formatted transcript
 	async function downloadTranscript() {
@@ -420,6 +432,20 @@ onMount(() => {
 		if (event.key === 'Escape' && showDailyReportModal) {
 			closeDailyReport();
 		}
+		if (event.key === 'Escape' && showProjectDropdown) {
+			closeProjectDropdown();
+		}
+	}
+
+	// Handle global click to close dropdown
+	function handleGlobalClick(event: MouseEvent) {
+		if (showProjectDropdown) {
+			const target = event.target as HTMLElement;
+			const dropdown = target.closest('.relative');
+			if (!dropdown) {
+				closeProjectDropdown();
+			}
+		}
 	}
 
 	// Function to generate daily report
@@ -449,6 +475,125 @@ onMount(() => {
 		} finally {
 			isGeneratingReport = false;
 			selectedDate = ''; // Reset the selected date
+		}
+	}
+
+	// Function to open project dropdown
+	async function openProjectDropdown() {
+		const videoId = page.url.searchParams.get('v');
+		if (!videoId) {
+			alert('No video ID found');
+			return;
+		}
+		
+		currentVideoId = videoId;
+		showProjectDropdown = true;
+		
+		try {
+			projects = await fetchProjects(videoId);
+		} catch (error) {
+			console.error('Failed to fetch projects:', error);
+			alert('Failed to load projects');
+		}
+	}
+
+	// Function to close project dropdown
+	function closeProjectDropdown() {
+		showProjectDropdown = false;
+		projects = [];
+		currentVideoId = null;
+	}
+
+	// Function to show new project modal
+	function openNewProjectModal() {
+		showNewProjectModal = true;
+		// Close the dropdown but preserve currentVideoId
+		showProjectDropdown = false;
+		projects = [];
+	}
+
+	// Function to close new project modal
+	function closeNewProjectModal() {
+		showNewProjectModal = false;
+		newProjectName = '';
+	}
+
+	// Function to create new project
+	async function createNewProject() {
+		if (!newProjectName.trim() || isCreatingProject) return;
+		
+		console.log('Creating new project:', newProjectName.trim());
+		console.log('Current video ID:', currentVideoId);
+		
+		isCreatingProject = true;
+		
+		try {
+			const project = await createProject(newProjectName.trim());
+			console.log('Project created successfully:', project);
+			
+			// Automatically add current video to the newly created project
+			if (currentVideoId) {
+				console.log('Attempting to add video to project...');
+				try {
+					await addVideoToProject(project.$id, currentVideoId);
+					console.log('✅ Video automatically added to new project:', project.name);
+				} catch (error) {
+					console.error('❌ Failed to automatically add video to project:', error);
+					// Don't show alert for automatic addition failure
+				}
+			} else {
+				console.log('No current video ID, skipping auto-add');
+			}
+			
+			// Refresh projects to get updated state
+			console.log('Refreshing projects list...');
+			projects = await fetchProjects(currentVideoId || undefined);
+			console.log('Projects refreshed:', projects.length, 'projects found');
+			
+			// Close modal and reset form only after all operations are complete
+			newProjectName = '';
+			closeNewProjectModal();
+		} catch (error) {
+			console.error('Failed to create project:', error);
+			alert('Failed to create project');
+		} finally {
+			isCreatingProject = false;
+		}
+	}
+
+	// Function to add video to project
+	async function addToProject(projectId: string) {
+		if (!currentVideoId || isAddingToProject) return;
+		
+		isAddingToProject = true;
+		
+		try {
+			await addVideoToProject(projectId, currentVideoId);
+			// Refresh projects to update the UI
+			projects = await fetchProjects(currentVideoId);
+		} catch (error) {
+			console.error('Failed to add video to project:', error);
+			alert('Failed to add video to project');
+		} finally {
+			isAddingToProject = false;
+		}
+	}
+
+	// Function to remove video from project
+	async function removeFromProject(projectId: string) {
+		if (!currentVideoId || isAddingToProject) return;
+		
+		isAddingToProject = true;
+		
+		try {
+			await removeVideoFromProject(projectId, currentVideoId);
+			// Refresh projects to update the UI
+			projects = await fetchProjects(currentVideoId);
+		} catch (error) {
+			console.error('Failed to remove video from project:', error);
+			alert('Failed to remove video from project');
+		} finally {
+			isAddingToProject = false;
 		}
 	}
 </script>
@@ -580,9 +725,79 @@ onMount(() => {
 					{/if}
 				</button>
 			{/if}
+
+			{#if showBlockButton()}
+				<div class="relative">
+					<button
+						onclick={openProjectDropdown}
+						class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-purple-500/10 text-zinc-300 hover:text-purple-300"
+						title="Add video to project"
+					>
+						<svg class="h-4 w-4 transition-colors duration-200 group-hover:text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+						</svg>
+						<span class="hidden sm:block">Add to Project</span>
+						<svg class="h-3 w-3 transition-transform duration-200 {showProjectDropdown ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+						</svg>
+					</button>
+					
+					<!-- Project Dropdown -->
+					{#if showProjectDropdown}
+						<div class="absolute right-0 top-full z-50 mt-1 w-64 rounded-lg border border-zinc-700/50 bg-zinc-900 shadow-xl">
+							<div class="p-2">
+								{#if projects.length === 0}
+									<p class="px-3 py-2 text-sm text-zinc-500">No projects found</p>
+								{:else}
+									<div class="space-y-1">
+										{#each projects as project}
+											<button
+												onclick={() => project.containsVideo ? removeFromProject(project.$id) : addToProject(project.$id)}
+												disabled={isAddingToProject}
+												class="w-full rounded-md px-3 py-2 text-left text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed {project.containsVideo 
+													? 'bg-green-500/10 text-green-100 hover:bg-green-500/20' 
+													: 'text-zinc-100 hover:bg-zinc-700'}"
+											>
+												<div class="flex items-center justify-between">
+													<span>{project.name}</span>
+													{#if project.containsVideo}
+														<svg class="h-4 w-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+														</svg>
+													{/if}
+												</div>
+											</button>
+										{/each}
+									</div>
+								{/if}
+								
+								<!-- New Project Option -->
+								<div class="mt-2 border-t border-zinc-700/50 pt-2">
+									<button
+										onclick={openNewProjectModal}
+										class="w-full rounded-md px-3 py-2 text-left text-sm text-zinc-300 hover:bg-zinc-700"
+									>
+										+ New Project
+									</button>
+								</div>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<div class="flex items-center gap-2">
+			<button
+				onclick={() => window.open('/projects', '_blank')}
+				title="View projects"
+				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
+			>
+				<svg class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+				</svg>
+				<span class="hidden sm:block">Projects</span>
+			</button>
 			{#if !showBlockButton()}
 				<button
 					onclick={() => goto('/follow')}
@@ -671,3 +886,62 @@ onMount(() => {
 		</div>
 	</div>
 {/if}
+
+<!-- New Project Modal -->
+{#if showNewProjectModal}
+	<div 
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+		onclick={(e) => e.target === e.currentTarget && closeNewProjectModal()}
+		onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && closeNewProjectModal()}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="new-project-modal-title"
+		tabindex="-1"
+	>
+		<div class="mx-4 w-full max-w-md rounded-xl border border-zinc-700/50 bg-zinc-900 p-6 shadow-2xl">
+			<div class="mb-4 flex items-center justify-between">
+				<h3 id="new-project-modal-title" class="text-lg font-semibold text-zinc-100">Create New Project</h3>
+				<button
+					onclick={closeNewProjectModal}
+					class="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-zinc-700/50 hover:text-zinc-200"
+					title="Close"
+				>
+					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+			
+			<div class="mb-6">
+				<label for="new-project-name" class="mb-2 block text-sm font-medium text-zinc-300">
+					Project Name
+				</label>
+				<input
+					id="new-project-name"
+					type="text"
+					bind:value={newProjectName}
+					placeholder="Enter project name..."
+					class="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+					onkeydown={(e) => e.key === 'Enter' && createNewProject()}
+				/>
+			</div>
+			
+			<div class="flex gap-3">
+				<button
+					onclick={closeNewProjectModal}
+					class="flex-1 rounded-lg border border-zinc-600 bg-transparent px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700/50 hover:text-zinc-100"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={createNewProject}
+					disabled={!newProjectName.trim() || isCreatingProject}
+					class="flex-1 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{isCreatingProject ? 'Creating...' : 'Create Project'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+

@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { databases } from '$lib/server/appwrite.js';
+import { Permission, Role } from "node-appwrite";
 import type { RequestHandler } from './$types.js';
 
 export const POST: RequestHandler = async () => {
@@ -95,6 +96,29 @@ export const POST: RequestHandler = async () => {
                 indexes: [
                     { name: 'date', type: 'unique', attributes: ['date'] }
                 ]
+            },
+            {
+                name: 'projects',
+                attributes: [
+                    { name: 'name', type: 'string', size: 500, required: true },
+                    { name: 'createdAt', type: 'datetime', required: true }
+                ],
+                indexes: [
+                    { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
+                ]
+            },
+            {
+                name: 'project_videos',
+                attributes: [
+                    { name: 'projectId', type: 'string', size: 255, required: true },
+                    { name: 'videoId', type: 'string', size: 255, required: true },
+                    { name: 'addedAt', type: 'datetime', required: true },
+                    { name: 'order', type: 'integer', required: true }
+                ],
+                indexes: [
+                    { key: 'projectId', type: 'key', attributes: ['projectId'] },
+                    { key: 'projectId_order', type: 'key', attributes: ['projectId', 'order'] }
+                ]
             }
         ];
 
@@ -121,7 +145,7 @@ export const POST: RequestHandler = async () => {
                     'main',
                     collection.name,
                     collection.name,
-                    ['document']
+                    [Permission.write(Role.any())]
                 );
                 
                 // 创建属性

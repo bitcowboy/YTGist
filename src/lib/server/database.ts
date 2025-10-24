@@ -1,6 +1,6 @@
 import { databases } from './appwrite.js';
 import { ID, Query } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, FollowedChannel, AppwriteDocument } from '$lib/types.js';
+import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, AppwriteDocument } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
@@ -8,7 +8,9 @@ export const COLLECTIONS = {
     TRANSCRIPTS: 'transcripts',
     DAILY_SUMMARIES: 'daily-summaries',
     BLOCKED_CHANNELS: 'blocked_channels',
-    FOLLOWED_CHANNELS: 'followed_channels'
+    FOLLOWED_CHANNELS: 'followed_channels',
+    PROJECTS: 'projects',
+    PROJECT_VIDEOS: 'project_videos'
 } as const;
 
 // Summary 相关操作
@@ -650,5 +652,168 @@ export const getChannelLastProcessedVideoId = async (channelId: string): Promise
     } catch (error) {
         console.error(`Failed to get last processed video ID for channel ${channelId}:`, error);
         return null;
+    }
+};
+
+// Project 相关操作
+export const getProjects = async (): Promise<Project[]> => {
+    try {
+        const { documents } = await databases.listDocuments<Project>(
+            'main',
+            COLLECTIONS.PROJECTS,
+            [Query.orderDesc('$createdAt')]
+        );
+        return documents;
+    } catch (error) {
+        console.error('Failed to get projects:', error);
+        return [];
+    }
+};
+
+export const getProject = async (projectId: string): Promise<Project | null> => {
+    try {
+        const { documents } = await databases.listDocuments<Project>(
+            'main',
+            COLLECTIONS.PROJECTS,
+            [Query.equal('$id', projectId), Query.limit(1)]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get project:', error);
+        return null;
+    }
+};
+
+export const createProject = async (name: string): Promise<Project> => {
+    try {
+        return await databases.createDocument<Project>(
+            'main',
+            COLLECTIONS.PROJECTS,
+            ID.unique(),
+            {
+                name,
+                createdAt: new Date().toISOString()
+            }
+        );
+    } catch (error) {
+        console.error('Failed to create project:', error);
+        throw error;
+    }
+};
+
+export const deleteProject = async (projectId: string): Promise<void> => {
+    try {
+        // First delete all project videos
+        const { documents: projectVideos } = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId)]
+        );
+        
+        for (const projectVideo of projectVideos) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.PROJECT_VIDEOS,
+                projectVideo.$id
+            );
+        }
+        
+        // Then delete the project
+        await databases.deleteDocument(
+            'main',
+            COLLECTIONS.PROJECTS,
+            projectId
+        );
+    } catch (error) {
+        console.error('Failed to delete project:', error);
+        throw error;
+    }
+};
+
+export const getProjectVideos = async (projectId: string): Promise<ProjectVideo[]> => {
+    try {
+        const { documents } = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId), Query.orderAsc('order')]
+        );
+        return documents;
+    } catch (error) {
+        console.error('Failed to get project videos:', error);
+        return [];
+    }
+};
+
+export const addVideoToProject = async (projectId: string, videoId: string): Promise<ProjectVideo> => {
+    try {
+        // Check if video is already in project
+        const existing = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        
+        if (existing.documents.length > 0) {
+            throw new Error('Video is already in this project');
+        }
+        
+        // Get the next order number
+        const { documents: existingVideos } = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId), Query.orderDesc('order'), Query.limit(1)]
+        );
+        
+        const nextOrder = existingVideos.length > 0 ? existingVideos[0].order + 1 : 1;
+        
+        return await databases.createDocument<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            ID.unique(),
+            {
+                projectId,
+                videoId,
+                addedAt: new Date().toISOString(),
+                order: nextOrder
+            }
+        );
+    } catch (error) {
+        console.error('Failed to add video to project:', error);
+        throw error;
+    }
+};
+
+export const removeVideoFromProject = async (projectId: string, videoId: string): Promise<void> => {
+    try {
+        const { documents } = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        
+        if (documents.length > 0) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.PROJECT_VIDEOS,
+                documents[0].$id
+            );
+        }
+    } catch (error) {
+        console.error('Failed to remove video from project:', error);
+        throw error;
+    }
+};
+
+export const isVideoInProject = async (projectId: string, videoId: string): Promise<boolean> => {
+    try {
+        const { documents } = await databases.listDocuments<ProjectVideo>(
+            'main',
+            COLLECTIONS.PROJECT_VIDEOS,
+            [Query.equal('projectId', projectId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        return documents.length > 0;
+    } catch (error) {
+        console.error('Failed to check if video is in project:', error);
+        return false;
     }
 };

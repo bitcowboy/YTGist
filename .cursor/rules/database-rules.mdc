@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+when you modify the database schema, you need to update the init database api.
