@@ -21,8 +21,10 @@ export const POST: RequestHandler = async ({ request }) => {
             return error(401, 'Unauthorized');
         }
         
+        const step1Start = Date.now();
         const followedChannels = await getFollowedChannels();
-        console.log(`📊 Found ${followedChannels.length} followed channels`);
+        const step1Time = Date.now() - step1Start;
+        console.log(`📊 Step 1 - Get followed channels with last processed IDs: ${step1Time}ms (${followedChannels.length} channels)`);
         
         if (followedChannels.length === 0) {
             return json({
@@ -47,13 +49,19 @@ export const POST: RequestHandler = async ({ request }) => {
         }
         
         // 批量获取增量RSS视频
+        const step2Start = Date.now();
         const rssResults = await getMultipleChannelsIncrementalRSSVideos(channelLastProcessedMap);
+        const step2Time = Date.now() - step2Start;
+        console.log(`📊 Step 2 - Get RSS videos: ${step2Time}ms`);
         
         // 处理每个频道的RSS结果
+        const step3Start = Date.now();
+        let step3TotalTime = 0;
         for (const rssResult of rssResults) {
             const channel = followedChannels.find(c => c.channelId === rssResult.channelId);
             if (!channel) continue;
 
+            const channelStart = Date.now();
             try {
                 console.log(`Processing channel: ${channel.channelName}`);
                 
@@ -148,10 +156,14 @@ export const POST: RequestHandler = async ({ request }) => {
                     lastProcessedVideoId: latestProcessedVideoId
                 });
                 
-                console.log(`✅ Channel ${channel.channelName}: ${channelNewVideos} new videos processed`);
+                const channelTime = Date.now() - channelStart;
+                step3TotalTime += channelTime;
+                console.log(`✅ Channel ${channel.channelName}: ${channelNewVideos} new videos processed (channel time: ${channelTime}ms)`);
                 
             } catch (error) {
-                console.error(`Failed to process channel ${channel.channelName}:`, error);
+                const channelTime = Date.now() - channelStart;
+                step3TotalTime += channelTime;
+                console.error(`Failed to process channel ${channel.channelName}:`, error, `(channel time: ${channelTime}ms)`);
                 results.push({
                     channelId: channel.channelId,
                     channelName: channel.channelName,
@@ -162,10 +174,19 @@ export const POST: RequestHandler = async ({ request }) => {
                 });
             }
         }
+        const step3Time = Date.now() - step3Start;
+        console.log(`📊 Step 3 - Process channels: ${step3Time}ms (total channel processing: ${step3TotalTime}ms)`);
 
         const totalTime = Date.now() - startTime;
-        console.log(`🎉 Process completed in ${(totalTime/1000).toFixed(2)}s`);
-        console.log(`📊 Channels: ${followedChannels.length}, New videos: ${totalNewVideos}, Processed: ${totalProcessedVideos}`);
+        console.log(`🎉 Incremental RSS-based follow process completed!`);
+        console.log(`📊 Total time: ${totalTime}ms (${(totalTime/1000).toFixed(2)}s)`);
+        console.log(`📊 Step breakdown:`);
+        console.log(`   - Step 1 (Get channels with last processed IDs): ${step1Time}ms`);
+        console.log(`   - Step 2 (Get RSS videos): ${step2Time}ms`);
+        console.log(`   - Step 3 (Process channels): ${step3Time}ms`);
+        console.log(`📊 Total channels: ${followedChannels.length}`);
+        console.log(`📊 Total new videos: ${totalNewVideos}`);
+        console.log(`📊 Total processed videos: ${totalProcessedVideos}`);
 
         return json({
             success: true,
