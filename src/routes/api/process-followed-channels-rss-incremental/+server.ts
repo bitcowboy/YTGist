@@ -11,6 +11,9 @@ import { getMultipleChannelsIncrementalRSSVideos } from '$lib/server/rss-monitor
 import { generateVideoSummary } from '$lib/server/video-summary-service.js';
 
 export const POST: RequestHandler = async ({ request }) => {
+    const startTime = Date.now();
+    console.log(`🚀 Starting incremental RSS-based follow process at ${new Date().toISOString()}`);
+    
     try {
         const { secret } = await request.json();
 
@@ -18,11 +21,11 @@ export const POST: RequestHandler = async ({ request }) => {
         if (!secret || (secret !== CRON_SECRET && !secret.includes('.'))) {
             return error(401, 'Unauthorized');
         }
-
-        console.log('Starting incremental RSS-based follow process...');
         
+        const step1Start = Date.now();
         const followedChannels = await getFollowedChannels();
-        console.log(`Found ${followedChannels.length} followed channels`);
+        const step1Time = Date.now() - step1Start;
+        console.log(`📊 Step 1 - Get followed channels: ${step1Time}ms (${followedChannels.length} channels)`);
         
         if (followedChannels.length === 0) {
             return json({
@@ -40,21 +43,30 @@ export const POST: RequestHandler = async ({ request }) => {
         const results = [];
 
         // 获取每个频道的最新处理视频ID
+        const step2Start = Date.now();
         const channelLastProcessedMap = new Map<string, string | null>();
         for (const channel of followedChannels) {
             const lastProcessedVideoId = await getChannelLastProcessedVideoId(channel.channelId);
             channelLastProcessedMap.set(channel.channelId, lastProcessedVideoId);
             console.log(`Channel ${channel.channelName}: last processed video ID = ${lastProcessedVideoId || 'none'}`);
         }
+        const step2Time = Date.now() - step2Start;
+        console.log(`📊 Step 2 - Get last processed video IDs: ${step2Time}ms`);
         
         // 批量获取增量RSS视频
+        const step3Start = Date.now();
         const rssResults = await getMultipleChannelsIncrementalRSSVideos(channelLastProcessedMap);
+        const step3Time = Date.now() - step3Start;
+        console.log(`📊 Step 3 - Get RSS videos: ${step3Time}ms`);
         
         // 处理每个频道的RSS结果
+        const step4Start = Date.now();
+        let step4TotalTime = 0;
         for (const rssResult of rssResults) {
             const channel = followedChannels.find(c => c.channelId === rssResult.channelId);
             if (!channel) continue;
 
+            const channelStart = Date.now();
             try {
                 console.log(`Processing incremental RSS videos for channel: ${channel.channelName} (${channel.channelId})`);
                 
@@ -82,12 +94,15 @@ export const POST: RequestHandler = async ({ request }) => {
                 
                 // 检查每个视频是否已经在summaries表中存在
                 for (const video of channelVideos) {
+                    const videoStart = Date.now();
                     try {
                         // 检查视频是否已经有总结
+                        const summaryCheckStart = Date.now();
                         const existingSummary = await getSummary(video.videoId);
+                        const summaryCheckTime = Date.now() - summaryCheckStart;
                         
                         if (existingSummary) {
-                            console.log(`Video ${video.videoId} already has summary, skipping`);
+                            console.log(`Video ${video.videoId} already has summary, skipping (${summaryCheckTime}ms)`);
                             // 仍然更新最新处理视频ID，因为这是RSS中的新视频
                             if (!latestProcessedVideoId || video.publishedAt > latestProcessedVideoPublishedAt) {
                                 latestProcessedVideoId = video.videoId;
@@ -97,10 +112,12 @@ export const POST: RequestHandler = async ({ request }) => {
                             continue;
                         }
                         
-                        console.log(`Processing new video: ${video.videoId} - ${video.title}`);
+                        console.log(`Processing new video: ${video.videoId} - ${video.title} (summary check: ${summaryCheckTime}ms)`);
                         
                         // 使用统一的视频总结生成服务
+                        const generateStart = Date.now();
                         const result = await generateVideoSummary(video.videoId);
+                        const generateTime = Date.now() - generateStart;
                         
                         if (result.success) {
                             channelNewVideos++;
@@ -115,15 +132,18 @@ export const POST: RequestHandler = async ({ request }) => {
                                 latestProcessedVideoPublishedAt = video.publishedAt;
                             }
                             
-                            console.log(`✅ Successfully processed video: ${video.videoId} - ${video.title}`);
+                            const videoTotalTime = Date.now() - videoStart;
+                            console.log(`✅ Successfully processed video: ${video.videoId} - ${video.title} (total: ${videoTotalTime}ms, generate: ${generateTime}ms)`);
                         } else {
-                            console.warn(`❌ Failed to process video ${video.videoId}: ${result.error}`);
+                            const videoTotalTime = Date.now() - videoStart;
+                            console.warn(`❌ Failed to process video ${video.videoId}: ${result.error} (total: ${videoTotalTime}ms, generate: ${generateTime}ms)`);
                             channelProcessedVideos++;
                             totalProcessedVideos++;
                         }
                         
                     } catch (error) {
-                        console.error(`Failed to process video ${video.videoId}:`, error);
+                        const videoTotalTime = Date.now() - videoStart;
+                        console.error(`Failed to process video ${video.videoId}:`, error, `(total: ${videoTotalTime}ms)`);
                         channelProcessedVideos++;
                         totalProcessedVideos++;
                     }
@@ -149,10 +169,14 @@ export const POST: RequestHandler = async ({ request }) => {
                     lastProcessedVideoId: latestProcessedVideoId
                 });
                 
-                console.log(`✅ Channel ${channel.channelName}: ${channelNewVideos} new videos processed, last processed: ${latestProcessedVideoId}`);
+                const channelTime = Date.now() - channelStart;
+                step4TotalTime += channelTime;
+                console.log(`✅ Channel ${channel.channelName}: ${channelNewVideos} new videos processed, last processed: ${latestProcessedVideoId} (channel time: ${channelTime}ms)`);
                 
             } catch (error) {
-                console.error(`Failed to process channel ${channel.channelName}:`, error);
+                const channelTime = Date.now() - channelStart;
+                step4TotalTime += channelTime;
+                console.error(`Failed to process channel ${channel.channelName}:`, error, `(channel time: ${channelTime}ms)`);
                 results.push({
                     channelId: channel.channelId,
                     channelName: channel.channelName,
@@ -163,8 +187,17 @@ export const POST: RequestHandler = async ({ request }) => {
                 });
             }
         }
+        const step4Time = Date.now() - step4Start;
+        console.log(`📊 Step 4 - Process channels: ${step4Time}ms (total channel processing: ${step4TotalTime}ms)`);
 
+        const totalTime = Date.now() - startTime;
         console.log(`🎉 Incremental RSS-based follow process completed!`);
+        console.log(`📊 Total time: ${totalTime}ms (${(totalTime/1000).toFixed(2)}s)`);
+        console.log(`📊 Step breakdown:`);
+        console.log(`   - Step 1 (Get channels): ${step1Time}ms`);
+        console.log(`   - Step 2 (Get last processed): ${step2Time}ms`);
+        console.log(`   - Step 3 (Get RSS videos): ${step3Time}ms`);
+        console.log(`   - Step 4 (Process channels): ${step4Time}ms`);
         console.log(`📊 Total channels: ${followedChannels.length}`);
         console.log(`📊 Total new videos: ${totalNewVideos}`);
         console.log(`📊 Total processed videos: ${totalProcessedVideos}`);
