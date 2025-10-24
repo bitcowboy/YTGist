@@ -49,9 +49,9 @@
 		}
 	}
 
-	// Function to navigate to watch page
+	// Function to navigate to YouTube
 	function goToVideo(videoId: string) {
-		goto(`/watch?v=${videoId}`);
+		window.open(`https://www.youtube.com/watch?v=${videoId}`, '_blank');
 	}
 
 	// Format date
