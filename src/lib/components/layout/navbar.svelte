@@ -594,16 +594,6 @@ onMount(() => {
 				</button>
 			{/if}
 			<button
-				onclick={() => goto('/rss-test')}
-				title="Test RSS monitoring"
-				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
-			>
-				<svg class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-				</svg>
-				<span class="hidden sm:block">RSS Test</span>
-			</button>
-			<button
 				onclick={openDailyReport}
 				title="Generate daily report for any date"
 				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
