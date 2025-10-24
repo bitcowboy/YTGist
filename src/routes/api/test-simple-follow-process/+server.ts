@@ -1,9 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { getFollowedChannels, getSummary } from '$lib/server/database.js';
 import { getChannelVideos } from '$lib/server/channel-videos.js';
-import { getVideoData } from '$lib/server/videoData.js';
-import { getSummary as generateSummary } from '$lib/server/summary.js';
-import { createSummary } from '$lib/server/database.js';
+import { generateVideoSummary } from '$lib/server/video-summary-service.js';
 import type { RequestHandler } from './$types.js';
 
 export const POST: RequestHandler = async () => {
@@ -54,41 +52,19 @@ export const POST: RequestHandler = async () => {
                         
                         console.log(`Processing new video: ${video.videoId} - ${video.title}`);
                         
-                        // 获取视频数据
-                        const videoData = await getVideoData(video.videoId);
-                        if (!videoData) {
-                            console.warn(`Failed to get video data for ${video.videoId}`);
-                            continue;
+                        // 使用统一的视频总结生成服务
+                        const result = await generateVideoSummary(video.videoId);
+                        
+                        if (result.success) {
+                            channelNewVideos++;
+                            channelProcessedVideos++;
+                            totalNewVideos++;
+                            totalProcessedVideos++;
+                            
+                            console.log(`✅ Successfully processed video: ${video.videoId}`);
+                        } else {
+                            console.warn(`❌ Failed to process video ${video.videoId}: ${result.error}`);
                         }
-                        
-                        // 生成总结
-                        const summaryResult = await generateSummary(videoData);
-                        if (!summaryResult) {
-                            console.warn(`Failed to generate summary for ${video.videoId}`);
-                            continue;
-                        }
-                        
-                        // 保存总结到数据库
-                        await createSummary({
-                            videoId: video.videoId,
-                            title: videoData.title,
-                            description: videoData.description,
-                            author: videoData.author,
-                            channelId: videoData.channelId,
-                            summary: summaryResult.summary,
-                            keyTakeaway: summaryResult.keyTakeaway,
-                            keyPoints: summaryResult.keyPoints,
-                            coreTerms: summaryResult.coreTerms,
-                            hasSubtitles: videoData.hasSubtitles,
-                            publishedAt: video.publishedAt
-                        });
-                        
-                        channelNewVideos++;
-                        channelProcessedVideos++;
-                        totalNewVideos++;
-                        totalProcessedVideos++;
-                        
-                        console.log(`Successfully processed video: ${video.videoId}`);
                         
                     } catch (error) {
                         console.error(`Failed to process video ${video.videoId}:`, error);

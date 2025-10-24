@@ -1,4 +1,4 @@
-name: Process Followed Channels (RSS-based Incremental)
+name: Process Followed Channels
 
 on:
   schedule:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch: # 允许手动触发
 
 jobs:
-  process-followed-channels-rss-incremental:
+  process-followed-channels:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Process Followed Channels (RSS-based Incremental)
+      - name: Process Followed Channels
         run: |
           echo "Processing followed channels with incremental RSS-based monitoring..."
           echo "This will use RSS feeds to monitor followed channels for new videos with incremental updates"

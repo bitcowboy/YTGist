@@ -3,9 +3,7 @@ import type { RequestHandler } from './$types';
 import { CRON_SECRET } from '$env/static/private';
 import { getFollowedChannels, getSummary } from '$lib/server/database.js';
 import { getMultipleChannelsRSSVideos } from '$lib/server/rss-monitor.js';
-import { getVideoData } from '$lib/server/videoData.js';
-import { getSummary as generateSummary } from '$lib/server/summary.js';
-import { createSummary } from '$lib/server/database.js';
+import { generateVideoSummary } from '$lib/server/video-summary-service.js';
 
 export const POST: RequestHandler = async ({ request }) => {
     try {
@@ -82,41 +80,21 @@ export const POST: RequestHandler = async ({ request }) => {
                         
                         console.log(`Processing new video: ${video.videoId} - ${video.title}`);
                         
-                        // 获取视频数据
-                        const videoData = await getVideoData(video.videoId);
-                        if (!videoData) {
-                            console.warn(`Failed to get video data for ${video.videoId}`);
-                            continue;
+                        // 使用统一的视频总结生成服务
+                        const result = await generateVideoSummary(video.videoId);
+                        
+                        if (result.success) {
+                            channelNewVideos++;
+                            channelProcessedVideos++;
+                            totalNewVideos++;
+                            totalProcessedVideos++;
+                            
+                            console.log(`✅ Successfully processed video: ${video.videoId} - ${video.title}`);
+                        } else {
+                            console.warn(`❌ Failed to process video ${video.videoId}: ${result.error}`);
+                            channelProcessedVideos++;
+                            totalProcessedVideos++;
                         }
-                        
-                        // 生成总结
-                        const summaryResult = await generateSummary(videoData);
-                        if (!summaryResult) {
-                            console.warn(`Failed to generate summary for ${video.videoId}`);
-                            continue;
-                        }
-                        
-                        // 保存总结到数据库
-                        await createSummary({
-                            videoId: video.videoId,
-                            title: videoData.title || video.title,
-                            description: videoData.description || video.description || '',
-                            author: videoData.author || channel.channelName,
-                            channelId: channel.channelId,
-                            summary: summaryResult.summary,
-                            keyTakeaway: summaryResult.keyTakeaway,
-                            keyPoints: summaryResult.keyPoints,
-                            coreTerms: summaryResult.coreTerms,
-                            hasSubtitles: videoData.hasSubtitles,
-                            publishedAt: video.publishedAt
-                        });
-                        
-                        channelNewVideos++;
-                        channelProcessedVideos++;
-                        totalNewVideos++;
-                        totalProcessedVideos++;
-                        
-                        console.log(`✅ Successfully processed video: ${video.videoId} - ${video.title}`);
                         
                     } catch (error) {
                         console.error(`Failed to process video ${video.videoId}:`, error);
