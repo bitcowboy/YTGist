@@ -13,12 +13,11 @@
 
 	let videoMeta = $derived.by(() => {
 		if (!summaryData) return { author: 'Unknown', channelId: '', channelAvatarUrl: '' };
-		try {
-			return JSON.parse(summaryData.meta) as VideoMeta;
-		} catch (e) {
-			console.error('Failed to parse videoMeta:', e);
-			return { author: 'Unknown', channelId: '', channelAvatarUrl: '' };
-		}
+		return {
+			author: summaryData.author || 'Unknown',
+			channelId: summaryData.channelId || '',
+			channelAvatarUrl: ''
+		};
 	});
 
 	const copyLink = async () => {

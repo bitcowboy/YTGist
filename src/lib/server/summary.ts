@@ -47,6 +47,11 @@ const responseSchema = {
 
 export const getSummary = async (videoData: VideoMeta) => {
 	try {
+		// 检查是否有字幕，如果没有字幕则抛出错误
+		if (!videoData.hasSubtitles || !videoData.transcript || videoData.transcript.trim() === '') {
+			throw new Error('NO_SUBTITLES_AVAILABLE');
+		}
+
 		const data = {
 			title: videoData.title,
 			description: videoData.description,

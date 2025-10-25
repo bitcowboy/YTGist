@@ -24,56 +24,63 @@ export const getTranscript = async (videoId: string) => {
         }
     }
 
-    // FREE_TRANSCRIPT_ENDPOINT is available, try methodOne first
-    try {
-        // Try methodOne without proxy first
-        return await methodOne(videoId, false);
-    } catch (error) {
-        // If it's a no subtitles error, don't try other methods
-        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-            throw error;
+    // FREE_TRANSCRIPT_ENDPOINT is available, try methodOne with multiple languages
+    const languages = ['zh', 'en', 'auto']; // Try Chinese first, then English, then auto-detect
+    
+    for (const lang of languages) {
+        try {
+            console.log(`Trying methodOne with language: ${lang}`);
+            // Try methodOne without proxy first
+            return await methodOne(videoId, false, lang);
+        } catch (error) {
+            // If it's a no subtitles error, try next language
+            if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+                console.log(`No subtitles found for language: ${lang}, trying next...`);
+                continue;
+            }
+            
+            console.warn(`methodOne without proxy failed for language ${lang}:`, error);
         }
-        
-        console.warn('methodOne without proxy failed:', error);
 
         // Only try with proxy if PROXY_URI is available
         if (proxyAgent) {
             try {
-                // Try methodOne with proxy
-                return await methodOne(videoId, true);
-        } catch (error) {
-            // If it's a no subtitles error, don't try methodTwo
-            if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                console.info('Transcript not available via methodOne (proxy)');
-                throw error;
+                console.log(`Trying methodOne with proxy for language: ${lang}`);
+                return await methodOne(videoId, true, lang);
+            } catch (error) {
+                // If it's a no subtitles error, try next language
+                if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+                    console.log(`No subtitles found for language ${lang} with proxy, trying next...`);
+                    continue;
+                }
+                console.warn(`methodOne with proxy failed for language ${lang}:`, error);
             }
-            console.warn('methodOne with proxy failed:', error);
         }
-        }
+    }
 
-        // Try methodTwo as last resort
-        try {
-            return await methodTwo(videoId);
-        } catch (error) {
-            // If it's a no subtitles error, preserve it with low-noise log
-            if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                console.info('Transcript not available via methodTwo');
-                throw error;
-            }
-            console.error('All transcript methods failed:', error);
-            throw new Error('Failed to get transcript using all available methods');
+    // Try methodTwo as last resort
+    try {
+        console.log('All methodOne attempts failed, trying methodTwo...');
+        return await methodTwo(videoId);
+    } catch (error) {
+        // If it's a no subtitles error, preserve it with low-noise log
+        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+            console.info('Transcript not available via methodTwo');
+            throw error;
         }
+        console.error('All transcript methods failed:', error);
+        throw new Error('Failed to get transcript using all available methods');
     }
 }
 
-const methodOne = async (videoId: string, useProxy = false) => {
+const methodOne = async (videoId: string, useProxy = false, langCode = "en") => {
     const options: Record<string, unknown> = {
         headers: {
             "content-type": "application/json",
         },
         body: JSON.stringify({
             videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            langCode: "en"
+            langCode: langCode
         }),
         method: "POST",
     }
@@ -106,48 +113,123 @@ const methodOne = async (videoId: string, useProxy = false) => {
 }
 
 const methodTwo = async (videoId: string) => {
+    console.log(`[methodTwo] Starting transcript extraction for video: ${videoId}`);
+    
     const innertubeOptions: any = {
         cache: new UniversalCache(false)
     };
 
     // Only use proxy if proxyAgent is available
     if (proxyAgent) {
+        console.log('[methodTwo] Using proxy agent');
         innertubeOptions.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
             const options: Record<string, unknown> = { ...init, dispatcher: proxyAgent };
             return Platform.shim.fetch(input, options)
         };
+    } else {
+        console.log('[methodTwo] No proxy agent, using direct connection');
     }
 
-    const innertube = await Innertube.create(innertubeOptions);
-
-    const info = await innertube.getInfo(videoId);
-    
     try {
-        const transcriptInfo = await info.getTranscript();
-        
-        // Check if transcript data is available
-        if (!transcriptInfo?.transcript?.content?.body?.initial_segments) {
-            throw new Error('NO_SUBTITLES_AVAILABLE');
-        }
-        
-        const transcript = transcriptInfo.transcript.content.body.initial_segments
-            .map((segment) => segment.snippet.text)
-            .join('\n');
-            
-        // Check if transcript is empty or just whitespace
-        if (!transcript || transcript.trim() === '') {
-            throw new Error('NO_SUBTITLES_AVAILABLE');
-        }
+        console.log('[methodTwo] Creating Innertube instance...');
+        const innertube = await Innertube.create(innertubeOptions);
+        console.log('[methodTwo] Innertube instance created successfully');
 
-        return transcript;
-    } catch (error) {
-        // If the error is already our specific error, re-throw it
-        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-            throw error;
+        console.log('[methodTwo] Getting video info...');
+        const info = await innertube.getInfo(videoId);
+        console.log('[methodTwo] Video info retrieved successfully');
+        
+        // Debug: Log available captions/tracks
+        let captions;
+        try {
+            captions = info.captions;
+            console.log('[methodTwo] Available captions:', {
+                hasCaptions: !!captions,
+                captionTracks: captions?.caption_tracks?.length || 0
+            });
+            
+            if (captions?.caption_tracks) {
+                console.log('[methodTwo] Caption tracks details:', captions.caption_tracks.map((track: any) => ({
+                    language: track.language_code,
+                    name: track.name?.simple_text,
+                    isTranslatable: track.is_translatable,
+                    kind: track.kind
+                })));
+            }
+        } catch (captionError) {
+            console.warn('[methodTwo] Failed to inspect captions:', captionError);
         }
         
-        // If it's a different error (like transcript not available), convert it
-        // console.info('Transcript not available due to methodTwo error, normalizing to NO_SUBTITLES_AVAILABLE');
+        try {
+            console.log('[methodTwo] Attempting to get transcript...');
+            
+            // Try to get transcript with available language
+            let transcriptInfo;
+            const availableLanguages = captions?.caption_tracks?.map((track: any) => track.language_code) || [];
+            console.log('[methodTwo] Available languages:', availableLanguages);
+            
+            // Try to get transcript (youtubei.js doesn't support language parameter)
+            console.log('[methodTwo] Attempting to get transcript with default settings...');
+            transcriptInfo = await info.getTranscript();
+            
+            console.log('[methodTwo] Transcript info retrieved:', {
+                hasTranscript: !!transcriptInfo,
+                hasContent: !!transcriptInfo?.transcript,
+                hasBody: !!transcriptInfo?.transcript?.content,
+                hasSegments: !!transcriptInfo?.transcript?.content?.body,
+                segmentsCount: transcriptInfo?.transcript?.content?.body?.initial_segments?.length || 0
+            });
+            
+            // Check if transcript data is available
+            if (!transcriptInfo?.transcript?.content?.body?.initial_segments) {
+                console.log('[methodTwo] No transcript segments found');
+                throw new Error('NO_SUBTITLES_AVAILABLE');
+            }
+            
+            const segments = transcriptInfo.transcript.content.body.initial_segments;
+            console.log('[methodTwo] Processing segments:', {
+                count: segments.length,
+                firstSegment: segments[0] ? {
+                    text: segments[0].snippet?.text?.substring(0, 50) + '...',
+                    hasStartTime: 'start_time_ms' in segments[0],
+                    hasDuration: 'duration_ms' in segments[0]
+                } : null
+            });
+            
+            const transcript = segments
+                .map((segment) => segment.snippet.text)
+                .join('\n');
+                
+            console.log('[methodTwo] Generated transcript length:', transcript.length);
+            console.log('[methodTwo] Transcript preview:', transcript.substring(0, 200) + '...');
+                
+            // Check if transcript is empty or just whitespace
+            if (!transcript || transcript.trim() === '') {
+                console.log('[methodTwo] Transcript is empty or whitespace only');
+                throw new Error('NO_SUBTITLES_AVAILABLE');
+            }
+
+            console.log('[methodTwo] Successfully extracted transcript');
+            return transcript;
+        } catch (transcriptError) {
+            console.error('[methodTwo] Failed to get transcript:', transcriptError);
+            
+            // If the error is already our specific error, re-throw it
+            if (transcriptError instanceof Error && transcriptError.message === 'NO_SUBTITLES_AVAILABLE') {
+                throw transcriptError;
+            }
+            
+            // Log the actual error for debugging
+            console.error('[methodTwo] Transcript error details:', {
+                message: transcriptError instanceof Error ? transcriptError.message : String(transcriptError),
+                name: transcriptError instanceof Error ? transcriptError.name : 'Unknown',
+                stack: transcriptError instanceof Error ? transcriptError.stack : undefined
+            });
+            
+            throw new Error('NO_SUBTITLES_AVAILABLE');
+        }
+    } catch (error) {
+        console.error('[methodTwo] Innertube error:', error);
         throw new Error('NO_SUBTITLES_AVAILABLE');
     }
 }

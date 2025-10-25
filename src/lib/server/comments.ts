@@ -1,6 +1,4 @@
-import { YOUTUBE_DATA_API_KEY, PROXY_URI } from "$env/static/private";
-import { Innertube, Platform, UniversalCache } from "youtubei.js";
-import { ProxyAgent } from 'undici';
+import { YOUTUBE_DATA_API_KEY } from "$env/static/private";
 
 export interface Comment {
     id: string;
@@ -16,8 +14,6 @@ export interface CommentsData {
     totalCount: number;
 }
 
-// Only create proxy agent if PROXY_URI is available
-const proxyAgent = PROXY_URI ? new ProxyAgent(PROXY_URI) : null;
 
 const getCommentsWithYouTubeAPI = async (videoId: string, maxResults: number = 50): Promise<CommentsData> => {
     if (!YOUTUBE_DATA_API_KEY) {
@@ -53,26 +49,15 @@ const getCommentsWithYouTubeAPI = async (videoId: string, maxResults: number = 5
     };
 };
 
-const getCommentsWithInnertube = async (videoId: string, maxResults: number = 50): Promise<CommentsData> => {
-    // Innertube comments API is complex and may not be reliable
-    // For now, we'll return empty results and rely on YouTube Data API
-    console.warn('Innertube comments not implemented, returning empty results');
-    return { comments: [], totalCount: 0 };
-};
 
 export const getComments = async (videoId: string, maxResults: number = 50): Promise<CommentsData> => {
-    try {
-        // Try YouTube Data API first if API key is available
-        if (YOUTUBE_DATA_API_KEY) {
-            try {
-                return await getCommentsWithYouTubeAPI(videoId, maxResults);
-            } catch (error) {
-                console.warn('YouTube Data API failed for comments, falling back to Innertube:', error);
-            }
-        }
+    if (!YOUTUBE_DATA_API_KEY) {
+        console.warn('YouTube Data API key not available, returning empty comments');
+        return { comments: [], totalCount: 0 };
+    }
 
-        // Fallback to Innertube
-        return await getCommentsWithInnertube(videoId, maxResults);
+    try {
+        return await getCommentsWithYouTubeAPI(videoId, maxResults);
     } catch (error) {
         console.error('Failed to get comments:', error);
         return { comments: [], totalCount: 0 };
