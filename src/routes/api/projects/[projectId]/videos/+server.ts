@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getProject, addVideoToProject, removeVideoFromProject } from '$lib/server/database.js';
+import { getProject, addVideoToProject, removeVideoFromProject, markProjectSummaryStale } from '$lib/server/database.js';
 
 export const POST: RequestHandler = async ({ params, request }) => {
     try {
@@ -22,6 +22,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
         }
         
         await addVideoToProject(projectId, videoId);
+        
+        // Mark project summary cache as stale
+        await markProjectSummaryStale(projectId);
         
         return json({
             success: true,
@@ -58,6 +61,9 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
         }
         
         await removeVideoFromProject(projectId, videoId);
+        
+        // Mark project summary cache as stale
+        await markProjectSummaryStale(projectId);
         
         return json({
             success: true,

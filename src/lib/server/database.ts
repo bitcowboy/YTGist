@@ -1,6 +1,6 @@
 import { databases } from './appwrite.js';
 import { ID, Query } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, AppwriteDocument } from '$lib/types.js';
+import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, AppwriteDocument } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
@@ -10,7 +10,8 @@ export const COLLECTIONS = {
     BLOCKED_CHANNELS: 'blocked_channels',
     FOLLOWED_CHANNELS: 'followed_channels',
     PROJECTS: 'projects',
-    PROJECT_VIDEOS: 'project_videos'
+    PROJECT_VIDEOS: 'project_videos',
+    PROJECT_SUMMARIES: 'project_summaries'
 } as const;
 
 // Summary 相关操作
@@ -814,6 +815,141 @@ export const isVideoInProject = async (projectId: string, videoId: string): Prom
         return documents.length > 0;
     } catch (error) {
         console.error('Failed to check if video is in project:', error);
+        return false;
+    }
+};
+
+// Project Summary Cache 相关操作
+export const getProjectSummary = async (projectId: string): Promise<ProjectSummary | null> => {
+    try {
+        const { documents } = await databases.listDocuments<ProjectSummary>(
+            'main',
+            COLLECTIONS.PROJECT_SUMMARIES,
+            [Query.equal('projectId', projectId), Query.limit(1)]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get project summary:', error);
+        return null;
+    }
+};
+
+export const createProjectSummary = async (summaryData: {
+    projectId: string;
+    title: string;
+    abstract: string;
+    body: string;
+    videoIds: string;
+    isStale: boolean;
+}): Promise<ProjectSummary> => {
+    const payload = {
+        projectId: summaryData.projectId,
+        title: (summaryData.title || '').slice(0, 500),
+        abstract: (summaryData.abstract || '').slice(0, 5000),
+        body: (summaryData.body || '').slice(0, 20000),
+        videoIds: (summaryData.videoIds || '').slice(0, 5000),
+        generatedAt: new Date().toISOString(),
+        isStale: summaryData.isStale ?? false
+    };
+
+    return await databases.createDocument<ProjectSummary>(
+        'main',
+        COLLECTIONS.PROJECT_SUMMARIES,
+        ID.unique(),
+        payload
+    );
+};
+
+export const updateProjectSummary = async (projectId: string, updateData: Partial<{
+    title: string;
+    abstract: string;
+    body: string;
+    videoIds: string;
+    isStale: boolean;
+}>): Promise<ProjectSummary> => {
+    const existing = await getProjectSummary(projectId);
+    if (!existing) {
+        throw new Error('Project summary not found');
+    }
+    
+    const payload: any = {};
+    if (updateData.title !== undefined) payload.title = (updateData.title || '').slice(0, 500);
+    if (updateData.abstract !== undefined) payload.abstract = (updateData.abstract || '').slice(0, 5000);
+    if (updateData.body !== undefined) payload.body = (updateData.body || '').slice(0, 20000);
+    if (updateData.videoIds !== undefined) payload.videoIds = (updateData.videoIds || '').slice(0, 5000);
+    if (updateData.isStale !== undefined) payload.isStale = updateData.isStale;
+    
+    return await databases.updateDocument<ProjectSummary>(
+        'main',
+        COLLECTIONS.PROJECT_SUMMARIES,
+        existing.$id,
+        payload
+    );
+};
+
+export const deleteProjectSummary = async (projectId: string): Promise<void> => {
+    try {
+        const existing = await getProjectSummary(projectId);
+        if (existing) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.PROJECT_SUMMARIES,
+                existing.$id
+            );
+        }
+    } catch (error) {
+        console.error('Failed to delete project summary:', error);
+        throw error;
+    }
+};
+
+export const markProjectSummaryStale = async (projectId: string): Promise<void> => {
+    try {
+        const existing = await getProjectSummary(projectId);
+        if (existing) {
+            await databases.updateDocument<ProjectSummary>(
+                'main',
+                COLLECTIONS.PROJECT_SUMMARIES,
+                existing.$id,
+                { isStale: true }
+            );
+        }
+    } catch (error) {
+        console.error('Failed to mark project summary as stale:', error);
+        // Don't throw error, as this is not critical
+    }
+};
+
+export const checkSummaryCacheValidity = async (projectId: string, currentVideoIds: string[]): Promise<boolean> => {
+    try {
+        const cachedSummary = await getProjectSummary(projectId);
+        if (!cachedSummary) {
+            return false; // No cache exists
+        }
+
+        if (cachedSummary.isStale) {
+            return false; // Cache is marked as stale
+        }
+
+        // Compare video IDs
+        const cachedVideoIds = cachedSummary.videoIds.split(',').filter(id => id.trim());
+        const currentVideoIdsSorted = [...currentVideoIds].sort();
+        const cachedVideoIdsSorted = [...cachedVideoIds].sort();
+
+        if (currentVideoIdsSorted.length !== cachedVideoIdsSorted.length) {
+            return false; // Different number of videos
+        }
+
+        // Check if all video IDs match
+        for (let i = 0; i < currentVideoIdsSorted.length; i++) {
+            if (currentVideoIdsSorted[i] !== cachedVideoIdsSorted[i]) {
+                return false; // Video lists don't match
+            }
+        }
+
+        return true; // Cache is valid
+    } catch (error) {
+        console.error('Failed to check summary cache validity:', error);
         return false;
     }
 };

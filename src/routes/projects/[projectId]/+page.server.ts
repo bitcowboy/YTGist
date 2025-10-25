@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getProject, getProjectVideos, getSummary } from '$lib/server/database';
+import { getProject, getProjectVideos, getSummary, getProjectSummary, checkSummaryCacheValidity } from '$lib/server/database';
 import type { Project, ProjectVideo, SummaryData } from '$lib/types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -36,15 +36,35 @@ export const load: PageServerLoad = async ({ params }) => {
 			}
 		}
 
+		// Check project summary cache validity
+		let summaryCacheStatus = null;
+		try {
+			const currentVideoIds = projectVideos.map(v => v.videoId);
+			const isCacheValid = await checkSummaryCacheValidity(projectId, currentVideoIds);
+			const cachedSummary = await getProjectSummary(projectId);
+			
+			summaryCacheStatus = {
+				hasCache: !!cachedSummary,
+				isValid: isCacheValid,
+				isStale: cachedSummary?.isStale || false,
+				generatedAt: cachedSummary?.generatedAt
+			};
+		} catch (error) {
+			console.error('Failed to check summary cache status:', error);
+			// Continue without cache status
+		}
+
 		return {
 			project,
-			videos: videosWithSummary
+			videos: videosWithSummary,
+			summaryCacheStatus
 		};
 	} catch (error) {
 		console.error('Failed to load project:', error);
 		return {
 			project: null,
 			videos: [],
+			summaryCacheStatus: null,
 			error: 'Failed to load project'
 		};
 	}

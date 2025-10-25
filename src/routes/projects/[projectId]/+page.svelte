@@ -2,12 +2,24 @@
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import { removeVideoFromProject, deleteProject } from '$lib/client/projects';
+	import { generateProjectSummary, getCachedProjectSummary, type ProjectSummary } from '$lib/client/project-summary';
 	import type { Project, ProjectVideo, SummaryData } from '$lib/types';
+	import { marked } from 'marked';
 
 	const { data }: { data: PageData } = $props();
 
 	let isDeletingProject = $state(false);
 	let isRemovingVideo = $state<string | null>(null);
+	let isGeneratingSummary = $state(false);
+	let projectSummary = $state<ProjectSummary | null>(null);
+	let activeTab = $state<'videos' | 'summary'>('videos');
+	let summaryError = $state<string | null>(null);
+	let cacheStatus = $state<{
+		hasCache: boolean;
+		isValid: boolean;
+		isStale: boolean;
+		generatedAt?: string;
+	} | null>(null);
 
 	// Function to delete project
 	async function handleDeleteProject() {
@@ -21,7 +33,6 @@
 		
 		try {
 			await deleteProject(data.project.$id);
-			// Redirect to projects page after successful deletion
 			goto('/projects');
 		} catch (error) {
 			console.error('Failed to delete project:', error);
@@ -39,7 +50,6 @@
 		
 		try {
 			await removeVideoFromProject(projectId, videoId);
-			// Refresh the page to update the video list
 			window.location.reload();
 		} catch (error) {
 			console.error('Failed to remove video from project:', error);
@@ -61,6 +71,68 @@
 			month: 'short',
 			day: 'numeric'
 		});
+	}
+
+	// Initialize cache status from server data
+	if (data.summaryCacheStatus) {
+		cacheStatus = data.summaryCacheStatus;
+	}
+
+	// Function to load cached summary
+	async function loadCachedSummary() {
+		if (!data.project) return;
+		
+		try {
+			const response = await getCachedProjectSummary(data.project.$id);
+			if (response.success && response.summary) {
+				projectSummary = response.summary;
+				cacheStatus = {
+					hasCache: true,
+					isValid: !response.isStale,
+					isStale: response.isStale || false,
+					generatedAt: response.generatedAt
+				};
+			}
+		} catch (error) {
+			console.error('Failed to load cached summary:', error);
+		}
+	}
+
+	// Function to generate project summary
+	async function handleGenerateSummary(forceRegenerate = false) {
+		if (!data.project || isGeneratingSummary) return;
+		
+		isGeneratingSummary = true;
+		summaryError = null;
+		
+		try {
+			const response = await generateProjectSummary(data.project.$id, forceRegenerate);
+			projectSummary = response.summary;
+			cacheStatus = {
+				hasCache: true,
+				isValid: !response.isStale,
+				isStale: response.isStale || false,
+				generatedAt: response.generatedAt
+			};
+		} catch (error) {
+			console.error('Failed to generate summary:', error);
+			summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
+		} finally {
+			isGeneratingSummary = false;
+		}
+	}
+
+	// Load cached summary on page mount if available
+	if (data.summaryCacheStatus?.hasCache && data.summaryCacheStatus.isValid) {
+		loadCachedSummary();
+	}
+
+	// Function to parse markdown (synchronous)
+	function parseMarkdown(text: string): string {
+		return marked.parse(text, {
+			breaks: true,
+			gfm: true
+		}) as string;
 	}
 </script>
 
@@ -120,7 +192,251 @@
 				</div>
 			</div>
 
-			<!-- Videos List -->
+			<!-- Mobile Tabs (visible on small screens) -->
+			<div class="md:hidden mb-6">
+				<div class="flex border-b border-zinc-800">
+					<button
+						onclick={() => activeTab = 'videos'}
+						class="flex-1 px-4 py-3 text-sm font-medium transition-colors {activeTab === 'videos' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-zinc-400 hover:text-zinc-200'}"
+					>
+						Videos ({data.videos.length})
+					</button>
+					<button
+						onclick={() => activeTab = 'summary'}
+						class="flex-1 px-4 py-3 text-sm font-medium transition-colors {activeTab === 'summary' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-zinc-400 hover:text-zinc-200'}"
+					>
+						AI Summary
+					</button>
+				</div>
+			</div>
+
+			<!-- Desktop Split Layout (hidden on mobile) -->
+			<div class="hidden md:flex gap-6 h-[calc(100vh-200px)]">
+				<!-- Left Panel: Videos List (40%) -->
+				<div class="w-2/5 flex flex-col">
+					<div class="flex items-center justify-between mb-4">
+						<h2 class="text-xl font-semibold text-zinc-100">Videos ({data.videos.length})</h2>
+					</div>
+					
+					<div class="flex-1 overflow-y-auto pr-2">
+						{#if data.videos.length === 0}
+							<div class="text-center py-16">
+								<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+								</svg>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">No videos in this project</h3>
+								<p class="text-zinc-500 mb-6">Add videos to this project from the watch page.</p>
+								<button
+									onclick={() => goto('/')}
+									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
+								>
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+									</svg>
+									Browse Videos
+								</button>
+							</div>
+						{:else}
+							<div class="space-y-3">
+								{#each data.videos as video, index}
+									<div class="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:bg-zinc-800/50">
+										<div class="flex items-start gap-3">
+											<!-- Video Thumbnail -->
+											<div class="flex-shrink-0">
+												<button
+													onclick={() => goToVideo(video.videoId)}
+													class="group relative block overflow-hidden rounded-lg bg-zinc-800"
+												>
+													<img
+														src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
+														alt={video.summary?.title || 'Video thumbnail'}
+														class="h-16 w-28 object-cover transition-transform group-hover:scale-105"
+														loading="lazy"
+													/>
+													
+													<!-- Play overlay -->
+													<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
+														<svg class="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+															<path d="M8 5v14l11-7z" />
+														</svg>
+													</div>
+												</button>
+											</div>
+
+											<!-- Video Info -->
+											<div class="flex-1 min-w-0">
+												<button
+													onclick={() => goToVideo(video.videoId)}
+													class="block w-full text-left"
+												>
+													<h3 class="text-sm font-semibold text-zinc-100 mb-1 line-clamp-2 group-hover:text-purple-400 transition-colors">
+														{video.summary?.title || `Video ${video.videoId}`}
+													</h3>
+												</button>
+												
+												{#if video.summary}
+													<div class="flex items-center gap-2 text-xs text-zinc-400 mb-1">
+														<span>{video.summary.author}</span>
+														<span>•</span>
+														<span>Added {formatDate(video.addedAt)}</span>
+													</div>
+													
+													{#if video.summary.summary}
+														<p class="text-xs text-zinc-500 line-clamp-2 mb-2">
+															{video.summary.summary}
+														</p>
+													{/if}
+												{:else}
+													<p class="text-xs text-zinc-500 mb-2">
+														Summary data not available
+													</p>
+												{/if}
+											</div>
+
+											<!-- Actions -->
+											<div class="flex flex-col gap-1">
+												<button
+													onclick={() => goToVideo(video.videoId)}
+													class="flex items-center gap-1 rounded bg-purple-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-purple-700"
+												>
+													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+													</svg>
+													Watch
+												</button>
+												
+												<button
+													onclick={() => handleRemoveVideo(data.project.$id, video.videoId)}
+													disabled={isRemovingVideo === video.videoId}
+													class="flex items-center gap-1 rounded border border-zinc-600 bg-transparent px-2 py-1 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+												>
+													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+													</svg>
+													{isRemovingVideo === video.videoId ? 'Removing...' : 'Remove'}
+												</button>
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Right Panel: AI Summary (60%) -->
+				<div class="w-3/5 flex flex-col">
+					<div class="flex items-center justify-between mb-4">
+						<div class="flex items-center gap-3">
+							<h2 class="text-xl font-semibold text-zinc-100">AI Summary</h2>
+							{#if cacheStatus?.hasCache}
+								<div class="flex items-center gap-2">
+									{#if cacheStatus.isStale}
+										<span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-400">
+											<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+											</svg>
+											Cache outdated
+										</span>
+									{:else if cacheStatus.isValid}
+										<span class="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-1 text-xs font-medium text-green-400">
+											<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+											</svg>
+											Cached
+										</span>
+									{/if}
+								</div>
+							{/if}
+						</div>
+						<div class="flex items-center gap-2">
+							<button
+								onclick={() => handleGenerateSummary(projectSummary ? true : false)}
+								disabled={isGeneratingSummary || data.videos.length === 0}
+								class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{#if isGeneratingSummary}
+									<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+									</svg>
+									Generating...
+								{:else}
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+									</svg>
+									{projectSummary ? 'Regenerate' : 'Generate Summary'}
+								{/if}
+							</button>
+						</div>
+					</div>
+					
+					<div class="flex-1 overflow-y-auto bg-zinc-900/50 rounded-lg p-6">
+						{#if isGeneratingSummary}
+							<div class="flex items-center justify-center py-16">
+								<div class="text-center">
+									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+									</svg>
+									<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
+									<p class="text-zinc-500">Analyzing all video transcripts...</p>
+								</div>
+							</div>
+						{:else if summaryError}
+							<div class="text-center py-16">
+								<svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+								</svg>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">Failed to Generate Summary</h3>
+								<p class="text-zinc-500 mb-4">{summaryError}</p>
+								<button
+									onclick={() => handleGenerateSummary(false)}
+									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
+								>
+									Try Again
+								</button>
+							</div>
+						{:else if projectSummary}
+							<div class="prose prose-invert max-w-none">
+								<h1 class="text-2xl font-bold text-zinc-100 mb-6">{projectSummary.title}</h1>
+								
+								<div class="mb-8">
+									<h2 class="text-lg font-semibold text-zinc-200 mb-3">摘要</h2>
+									<div class="text-zinc-300 leading-relaxed">{@html parseMarkdown(projectSummary.abstract)}</div>
+								</div>
+								
+								<div class="mb-8">
+									<h2 class="text-lg font-semibold text-zinc-200 mb-3">正文</h2>
+									<div class="text-zinc-300 leading-relaxed">{@html parseMarkdown(projectSummary.body)}</div>
+								</div>
+								
+							</div>
+						{:else}
+							<div class="text-center py-16">
+								<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+								</svg>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">AI Summary</h3>
+								<p class="text-zinc-500 mb-6">Generate a comprehensive analysis of all video transcripts in this project.</p>
+								<button
+									onclick={() => handleGenerateSummary(false)}
+									disabled={data.videos.length === 0}
+									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+									</svg>
+									Generate Summary
+								</button>
+							</div>
+						{/if}
+					</div>
+				</div>
+			</div>
+
+			<!-- Mobile Content (visible on small screens) -->
+			<div class="md:hidden">
+				{#if activeTab === 'videos'}
+					<!-- Mobile Videos List -->
 			{#if data.videos.length === 0}
 				<div class="text-center py-16">
 					<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,6 +539,116 @@
 					{/each}
 				</div>
 			{/if}
+				{:else if activeTab === 'summary'}
+					<!-- Mobile AI Summary -->
+					<div class="bg-zinc-900/50 rounded-lg p-6">
+						<div class="mb-6">
+							<div class="flex items-center justify-between mb-4">
+								<div class="flex items-center gap-3">
+									<h2 class="text-xl font-semibold text-zinc-100">AI Summary</h2>
+									{#if cacheStatus?.hasCache}
+										<div class="flex items-center gap-2">
+											{#if cacheStatus.isStale}
+												<span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-400">
+													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+													</svg>
+													Cache outdated
+												</span>
+											{:else if cacheStatus.isValid}
+												<span class="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-1 text-xs font-medium text-green-400">
+													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+													</svg>
+													Cached
+												</span>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									onclick={() => handleGenerateSummary(projectSummary ? true : false)}
+									disabled={isGeneratingSummary || data.videos.length === 0}
+									class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									{#if isGeneratingSummary}
+										<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+										</svg>
+										Generating...
+									{:else}
+										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+										</svg>
+										{projectSummary ? 'Regenerate' : 'Generate Summary'}
+									{/if}
+								</button>
+							</div>
+						</div>
+						
+						{#if isGeneratingSummary}
+							<div class="flex items-center justify-center py-16">
+								<div class="text-center">
+									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+									</svg>
+									<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
+									<p class="text-zinc-500">Analyzing all video transcripts...</p>
+								</div>
+							</div>
+						{:else if summaryError}
+							<div class="text-center py-16">
+								<svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+								</svg>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">Failed to Generate Summary</h3>
+								<p class="text-zinc-500 mb-4">{summaryError}</p>
+								<button
+									onclick={() => handleGenerateSummary(false)}
+									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
+								>
+									Try Again
+								</button>
+							</div>
+						{:else if projectSummary}
+							<div class="prose prose-invert max-w-none">
+								<h1 class="text-2xl font-bold text-zinc-100 mb-6">{projectSummary.title}</h1>
+								
+								<div class="mb-8">
+									<h2 class="text-lg font-semibold text-zinc-200 mb-3">摘要</h2>
+									<div class="text-zinc-300 leading-relaxed">{@html parseMarkdown(projectSummary.abstract)}</div>
+								</div>
+								
+								<div class="mb-8">
+									<h2 class="text-lg font-semibold text-zinc-200 mb-3">正文</h2>
+									<div class="text-zinc-300 leading-relaxed">{@html parseMarkdown(projectSummary.body)}</div>
+								</div>
+								
+							</div>
+						{:else}
+							<div class="text-center py-16">
+								<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+								</svg>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">AI Summary</h3>
+								<p class="text-zinc-500 mb-6">Generate a comprehensive analysis of all video transcripts in this project.</p>
+								<button
+									onclick={() => handleGenerateSummary(false)}
+									disabled={data.videos.length === 0}
+									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+									</svg>
+									Generate Summary
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>
@@ -236,3 +662,4 @@
 		line-clamp: 2;
 	}
 </style>
+

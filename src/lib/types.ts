@@ -8,16 +8,6 @@ export interface AppwriteDocument {
     $sequence: number;
 }
 
-// 视频基本信息表（数据库：videoInfo）
-export interface VideoInfo extends AppwriteDocument {
-    videoId: string;
-    title: string;
-    description: string;
-    author: string;
-    channelId: string;
-    hasSubtitles: boolean;
-}
-
 // 字幕（数据库：transcripts）
 export interface Transcript extends AppwriteDocument {
     videoId: string;
@@ -106,8 +96,19 @@ export interface Project extends AppwriteDocument {
 
 // 项目视频类型
 export interface ProjectVideo extends AppwriteDocument {
-    projectId: string;
-    videoId: string;
-    addedAt: string;
-    order: number;
+	projectId: string;
+	videoId: string;
+	addedAt: string;
+	order: number;
+}
+
+// 项目总结缓存类型
+export interface ProjectSummary extends AppwriteDocument {
+	projectId: string;
+	title: string;
+	abstract: string;
+	body: string;
+	videoIds: string; // comma-separated list of video IDs
+	generatedAt: string;
+	isStale: boolean;
 }

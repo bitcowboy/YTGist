@@ -47,23 +47,6 @@ export const POST: RequestHandler = async () => {
                 ]
             },
             {
-                name: 'videoInfo',
-                attributes: [
-                    { name: 'videoId', type: 'string', size: 255, required: true },
-                    { name: 'title', type: 'string', size: 1000, required: true },
-                    { name: 'author', type: 'string', size: 255, required: true },
-                    { name: 'channelId', type: 'string', size: 255, required: true },
-                    { name: 'publishedAt', type: 'string', size: 50, required: true },
-                    { name: 'duration', type: 'string', size: 20, required: false },
-                    { name: 'viewCount', type: 'integer', required: false },
-                    { name: 'hasSubtitles', type: 'boolean', required: false }
-                ],
-                indexes: [
-                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
-                    { key: 'channelId', type: 'key', attributes: ['channelId'] }
-                ]
-            },
-            {
                 name: 'transcripts',
                 attributes: [
                     { name: 'videoId', type: 'string', size: 255, required: true },
@@ -86,7 +69,7 @@ export const POST: RequestHandler = async () => {
                 ]
             },
             {
-                name: 'daily_summaries',
+                name: 'daily-summaries',
                 attributes: [
                     { name: 'date', type: 'string', size: 10, required: true },
                     { name: 'summary', type: 'string', size: 20000, required: true },
@@ -94,7 +77,7 @@ export const POST: RequestHandler = async () => {
                     { name: 'channelCount', type: 'integer', required: true }
                 ],
                 indexes: [
-                    { name: 'date', type: 'unique', attributes: ['date'] }
+                    { key: 'date', type: 'unique', attributes: ['date'] }
                 ]
             },
             {
@@ -119,6 +102,21 @@ export const POST: RequestHandler = async () => {
                     { key: 'projectId', type: 'key', attributes: ['projectId'] },
                     { key: 'projectId_order', type: 'key', attributes: ['projectId', 'order'] }
                 ]
+            },
+            {
+                name: 'project_summaries',
+                attributes: [
+                    { name: 'projectId', type: 'string', size: 255, required: true },
+                    { name: 'title', type: 'string', size: 500, required: true },
+                    { name: 'abstract', type: 'string', size: 5000, required: true },
+                    { name: 'body', type: 'string', size: 20000, required: true },
+                    { name: 'videoIds', type: 'string', size: 5000, required: true },
+                    { name: 'generatedAt', type: 'datetime', required: true },
+                    { name: 'isStale', type: 'boolean', required: false }
+                ],
+                indexes: [
+                    { key: 'projectId', type: 'unique', attributes: ['projectId'] }
+                ]
             }
         ];
 
@@ -131,12 +129,73 @@ export const POST: RequestHandler = async () => {
                 const exists = existingCollections.collections.some(c => c.name === collection.name);
                 
                 if (exists) {
-                    console.log(`Collection '${collection.name}' already exists, skipping`);
-                    results.push({
-                        name: collection.name,
-                        status: 'exists',
-                        message: 'Collection already exists'
-                    });
+                    console.log(`Collection '${collection.name}' already exists, checking attributes`);
+                    
+                    // 获取现有集合
+                    const existingCollection = existingCollections.collections.find(c => c.name === collection.name);
+                    
+                    if (existingCollection) {
+                        // 获取现有属性
+                        const existingAttributes = await databases.listAttributes('main', existingCollection.$id);
+                        const existingAttrNames = existingAttributes.attributes.map((a: any) => a.key);
+                        
+                        // 检查并添加缺失的属性
+                        const missingAttributes = [];
+                        for (const attr of collection.attributes) {
+                            if (!existingAttrNames.includes(attr.name)) {
+                                missingAttributes.push(attr.name);
+                                try {
+                                    if (attr.type === 'string') {
+                                        await databases.createStringAttribute(
+                                            'main',
+                                            existingCollection.$id,
+                                            attr.name,
+                                            attr.size || 255,
+                                            attr.required
+                                        );
+                                    } else if (attr.type === 'boolean') {
+                                        await databases.createBooleanAttribute(
+                                            'main',
+                                            existingCollection.$id,
+                                            attr.name,
+                                            attr.required
+                                        );
+                                    } else if (attr.type === 'integer') {
+                                        await databases.createIntegerAttribute(
+                                            'main',
+                                            existingCollection.$id,
+                                            attr.name,
+                                            attr.required
+                                        );
+                                    } else if (attr.type === 'datetime') {
+                                        await databases.createDatetimeAttribute(
+                                            'main',
+                                            existingCollection.$id,
+                                            attr.name,
+                                            attr.required
+                                        );
+                                    }
+                                    console.log(`Added missing attribute '${attr.name}' to '${collection.name}'`);
+                                } catch (attrError) {
+                                    console.warn(`Failed to add attribute ${attr.name} to ${collection.name}:`, attrError);
+                                }
+                            }
+                        }
+                        
+                        results.push({
+                            name: collection.name,
+                            status: 'updated',
+                            message: missingAttributes.length > 0 
+                                ? `Added missing attributes: ${missingAttributes.join(', ')}`
+                                : 'Collection already exists with all attributes'
+                        });
+                    } else {
+                        results.push({
+                            name: collection.name,
+                            status: 'exists',
+                            message: 'Collection already exists'
+                        });
+                    }
                     continue;
                 }
                 
@@ -164,16 +223,14 @@ export const POST: RequestHandler = async () => {
                                 'main',
                                 createdCollection.$id,
                                 attr.name,
-                                attr.required,
-                                false
+                                attr.required
                             );
                         } else if (attr.type === 'integer') {
                             await databases.createIntegerAttribute(
                                 'main',
                                 createdCollection.$id,
                                 attr.name,
-                                attr.required,
-                                0
+                                attr.required
                             );
                         } else if (attr.type === 'datetime') {
                             await databases.createDatetimeAttribute(
@@ -191,11 +248,11 @@ export const POST: RequestHandler = async () => {
                 // 创建索引（简化版本，避免类型错误）
                 for (const index of collection.indexes) {
                     try {
-                        const indexKey = 'key' in index ? index.key : index.name;
+                        const indexKey = index.key;
                         // 暂时跳过索引创建，避免类型错误
                         console.log(`Skipping index creation for ${indexKey} in ${collection.name}`);
                     } catch (indexError) {
-                        const indexKey = 'key' in index ? index.key : index.name;
+                        const indexKey = index.key;
                         console.warn(`Failed to create index ${indexKey} for ${collection.name}:`, indexError);
                     }
                 }
