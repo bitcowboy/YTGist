@@ -1,6 +1,7 @@
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
 import * as undici from 'undici';
+import { createApiRequestOptions } from './ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -50,9 +51,8 @@ export const formatTranscript = async (transcript: string, videoTitle?: string) 
 			? `请格式化以下视频的字幕文本：\n\n视频标题：${videoTitle}\n\n字幕内容：\n${transcript}`
 			: `请格式化以下字幕文本：\n\n${transcript}`;
 
-		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
-			messages: [
+		const response = await openai.chat.completions.create(
+			createApiRequestOptions([
 				{
 					role: "system",
 					content: formatPrompt
@@ -61,8 +61,8 @@ export const formatTranscript = async (transcript: string, videoTitle?: string) 
 					role: "user",
 					content: userContent
 				}
-			],
-		});
+			])
+		);
 
 		const formattedText = response.choices[0].message.content;
 		if (!formattedText) {

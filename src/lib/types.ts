@@ -92,6 +92,7 @@ export interface FollowedChannel extends AppwriteDocument {
 export interface Project extends AppwriteDocument {
     name: string;
     createdAt: string;
+    customPrompt?: string; // custom AI prompt for summary generation
 }
 
 // 项目视频类型
@@ -108,6 +109,7 @@ export interface ProjectSummary extends AppwriteDocument {
 	title: string;
 	abstract: string;
 	body: string;
+	keyTakeaway: string; // 添加 keyTakeaway 字段
 	videoIds: string; // comma-separated list of video IDs
 	generatedAt: string;
 	isStale: boolean;

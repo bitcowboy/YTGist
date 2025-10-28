@@ -5,7 +5,7 @@
 
 	const { data } = $props();
 
-	let projects = $state(data.projects || []);
+	let projects = $state(data.projects || []) as any[];
 
 </script>
 
@@ -42,6 +42,26 @@
 							<p class="mt-1 text-sm text-zinc-400">
 								Created {new Date(project.createdAt).toLocaleDateString()}
 							</p>
+							
+							{#if project.summary}
+								<div class="mt-4 space-y-2">
+									{#if project.summary.title}
+										<h3 class="text-base font-medium text-zinc-200">
+											{project.summary.title}
+										</h3>
+									{/if}
+									{#if project.summary.keyTakeaway}
+										<p class="text-sm text-zinc-400 line-clamp-3">
+											{project.summary.keyTakeaway}
+										</p>
+									{/if}
+									{#if project.summary.isStale}
+										<span class="inline-flex items-center text-xs text-amber-500">
+											⚠️ Summary may be outdated
+										</span>
+									{/if}
+								</div>
+							{/if}
 						</div>
 						<div class="flex items-center gap-2 text-sm text-zinc-400">
 							<VideoIcon class="h-4 w-4" />

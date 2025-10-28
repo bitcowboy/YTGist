@@ -1,11 +1,12 @@
 <script lang="ts">
-	import BookOpenIcon from '@lucide/svelte/icons/book-open';
-	import type { SummaryData } from '$lib/types';
-	import { marked } from 'marked';
+    import BookOpenIcon from '@lucide/svelte/icons/book-open';
+    import type { SummaryData } from '$lib/types';
+    import { marked } from 'marked';
 
-	let { summaryData }: { summaryData: SummaryData } = $props();
+    let { summaryData, streamingText = '' }: { summaryData: SummaryData; streamingText?: string } = $props();
 
-	let summaryHtml = $derived(summaryData ? marked.parse(summaryData.summary) : '');
+    let summaryHtml = $derived(summaryData ? marked.parse(summaryData.summary) : '');
+    let streamingHtml = $derived(streamingText && streamingText.length > 0 ? marked.parse(streamingText) : '');
 </script>
 
 <div class="space-y-4 p-4">
@@ -22,9 +23,9 @@
 		class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-6 transition-all duration-200 hover:bg-zinc-900/70"
 	>
 	-->
-		<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
-			{@html summaryHtml}
-		</div>
+        <div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
+            {@html streamingHtml || summaryHtml}
+        </div>
 	<!--
 	</div>
 	-->

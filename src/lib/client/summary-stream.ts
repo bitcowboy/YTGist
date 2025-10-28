@@ -5,6 +5,7 @@ export type SummaryStreamHandlers = {
 	onDelta?: (delta: string) => void;
 	onComplete?: (fullSummary: string) => void;
 	onFinal?: (payload: SummaryData) => void;
+	onPartial?: (partial: Partial<SummaryData>) => void;
 	onError?: (message: string) => void;
 };
 
@@ -58,6 +59,15 @@ export const openSummaryStream = async (
 			handlers.onFinal?.(payload);
 		}
 		close();
+	});
+
+	// Optional partial updates
+	source.addEventListener('summary-partial', (event) => {
+		const message = event as MessageEvent;
+		const payload = safeParse<Partial<SummaryData>>(message.data ?? '');
+		if (payload) {
+			handlers.onPartial?.(payload);
+		}
 	});
 
 	source.addEventListener('error', (event) => {

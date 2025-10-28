@@ -1,9 +1,11 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getProject, getProjectVideos, getTranscriptByVideoId, getProjectSummary, createProjectSummary, updateProjectSummary, checkSummaryCacheValidity } from '$lib/server/database.js';
+import { getProject, getProjectVideos, getTranscriptByVideoId, getProjectSummary, createProjectSummary, updateProjectSummary, checkSummaryCacheValidity, getProjectCustomPrompt } from '$lib/server/database.js';
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
 import * as undici from 'undici';
+import prompt from "$lib/server/prompt.md?raw";
+import { createApiRequestOptions, parseJsonResponse } from '$lib/server/ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -39,7 +41,7 @@ const multiDocumentAnalysisPrompt = `你是一个多文档整合分析专家，�
 
 const responseSchema = {
 	type: "object",
-	required: ["title", "abstract", "body"],
+	required: ["title", "abstract", "body", "keyTakeaway"],
 	properties: {
 		title: {
 			type: "string",
@@ -48,6 +50,9 @@ const responseSchema = {
 			type: "string",
 		},
 		body: {
+			type: "string",
+		},
+		keyTakeaway: {
 			type: "string",
 		},
 	},
@@ -89,7 +94,8 @@ export const GET: RequestHandler = async ({ params }) => {
 			summary: {
 				title: cachedSummary.title,
 				abstract: cachedSummary.abstract,
-				body: cachedSummary.body
+				body: cachedSummary.body,
+				keyTakeaway: cachedSummary.keyTakeaway
 			},
 			cached: true,
 			generatedAt: cachedSummary.generatedAt,
@@ -137,7 +143,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 						summary: {
 							title: cachedSummary.title,
 							abstract: cachedSummary.abstract,
-							body: cachedSummary.body
+							body: cachedSummary.body,
+							keyTakeaway: cachedSummary.keyTakeaway
 						},
 						cached: true,
 						generatedAt: cachedSummary.generatedAt,
@@ -177,40 +184,45 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			content: video.transcript
 		}));
 		
-		const prompt = `请分析以下视频的字幕内容，生成一个综合性的分析报告：
+		// Get custom prompt or use default (use watch page prompt for keyTakeaway style)
+		const systemPrompt = await getProjectCustomPrompt(projectId, prompt);
+		
+		const userPrompt = `请分析以下视频的字幕内容，生成一个综合性的分析报告：
 
 视频数据：
 ${JSON.stringify(documentsData, null, 2)}
 
-请基于这些视频的字幕内容，生成一个结构化的分析报告，包含标题、摘要、正文和参考资料。`;
+请基于这些视频的字幕内容，生成一个结构化的分析报告，包含标题、摘要、正文和关键要点。`;
 		
-		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
-			messages: [
+		const response = await openai.chat.completions.create(
+			createApiRequestOptions([
 				{
 					role: "system",
-					content: multiDocumentAnalysisPrompt
+					content: systemPrompt
 				},
 				{
 					role: "user",
-					content: prompt
+					content: userPrompt
 				}
-			],
-			response_format: {
-				type: "json_schema",
-				json_schema: {
-					name: "project_summary",
-					schema: responseSchema
-				}
-			},
-		});
+			], responseSchema, {
+				title: "项目分析报告",
+				abstract: "无法生成摘要",
+				body: "无法生成正文内容",
+				keyTakeaway: "无法生成关键要点"
+			})
+		);
 		
 		const content = response.choices[0].message.content;
 		if (!content) {
 			throw new Error('No content received from AI');
 		}
 		
-		const summaryData = JSON.parse(content);
+		const summaryData = parseJsonResponse(content, {
+			title: "项目分析报告",
+			abstract: "无法生成摘要",
+			body: "无法生成正文内容",
+			keyTakeaway: "无法生成关键要点"
+		});
 		
 		// Save to cache
 		const currentVideoIds = projectVideos.map(v => v.videoId);
@@ -225,6 +237,7 @@ ${JSON.stringify(documentsData, null, 2)}
 					title: summaryData.title,
 					abstract: summaryData.abstract,
 					body: summaryData.body,
+					keyTakeaway: summaryData.keyTakeaway,
 					videoIds: videoIdsString,
 					isStale: false
 				});
@@ -235,6 +248,7 @@ ${JSON.stringify(documentsData, null, 2)}
 					title: summaryData.title,
 					abstract: summaryData.abstract,
 					body: summaryData.body,
+					keyTakeaway: summaryData.keyTakeaway,
 					videoIds: videoIdsString,
 					isStale: false
 				});
@@ -246,7 +260,12 @@ ${JSON.stringify(documentsData, null, 2)}
 		
 		return json({
 			success: true,
-			summary: summaryData,
+			summary: {
+				title: summaryData.title,
+				abstract: summaryData.abstract,
+				body: summaryData.body,
+				keyTakeaway: summaryData.keyTakeaway
+			},
 			cached: true,
 			generatedAt: new Date().toISOString(),
 			isStale: false,

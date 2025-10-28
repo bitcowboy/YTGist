@@ -2,6 +2,7 @@ import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } 
 import OpenAI from 'openai';
 import type { Comment } from './comments.js';
 import * as undici from 'undici';
+import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -75,9 +76,8 @@ ${commentsText}
 
 请以JSON格式返回结果。`;
 
-		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
-			messages: [
+		const response = await openai.chat.completions.create(
+			createApiRequestOptions([
 				{
 					role: "system",
 					content: "你是一个专业的视频评论分析助手，擅长从观众评论中提取关键信息和观点。"
@@ -86,22 +86,21 @@ ${commentsText}
 					role: "user",
 					content: prompt
 				}
-			],
-			response_format: {
-				type: "json_schema",
-				json_schema: {
-					name: "comments_summary",
-					schema: commentsSummarySchema
-				}
-			},
-		});
+			], commentsSummarySchema, {
+				commentsSummary: "评论分析暂时不可用。",
+				commentsKeyPoints: []
+			})
+		);
 
 		const content = response.choices[0].message.content;
 		if (!content) {
 			throw new Error('No content received from OpenRouter');
 		}
 
-		return JSON.parse(content) as CommentsSummaryData;
+		return parseJsonResponse(content, {
+			commentsSummary: "评论分析暂时不可用。",
+			commentsKeyPoints: []
+		}) as CommentsSummaryData;
 	} catch (error) {
 		console.error('Failed to generate comments summary:', error);
 		return {

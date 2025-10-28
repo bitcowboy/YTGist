@@ -84,7 +84,8 @@ export const POST: RequestHandler = async () => {
                 name: 'projects',
                 attributes: [
                     { name: 'name', type: 'string', size: 500, required: true },
-                    { name: 'createdAt', type: 'datetime', required: true }
+                    { name: 'createdAt', type: 'datetime', required: true },
+                    { name: 'customPrompt', type: 'string', size: 10000, required: false }
                 ],
                 indexes: [
                     { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
@@ -110,6 +111,7 @@ export const POST: RequestHandler = async () => {
                     { name: 'title', type: 'string', size: 500, required: true },
                     { name: 'abstract', type: 'string', size: 5000, required: true },
                     { name: 'body', type: 'string', size: 20000, required: true },
+                    { name: 'keyTakeaway', type: 'string', size: 2000, required: true },
                     { name: 'videoIds', type: 'string', size: 5000, required: true },
                     { name: 'generatedAt', type: 'datetime', required: true },
                     { name: 'isStale', type: 'boolean', required: false }

@@ -2,6 +2,7 @@ export interface ProjectSummary {
 	title: string;
 	abstract: string;
 	body: string;
+	keyTakeaway: string;
 	references: string;
 }
 

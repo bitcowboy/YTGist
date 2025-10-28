@@ -685,7 +685,7 @@ export const getProject = async (projectId: string): Promise<Project | null> => 
     }
 };
 
-export const createProject = async (name: string): Promise<Project> => {
+export const createProject = async (name: string, customPrompt?: string): Promise<Project> => {
     try {
         return await databases.createDocument<Project>(
             'main',
@@ -693,7 +693,8 @@ export const createProject = async (name: string): Promise<Project> => {
             ID.unique(),
             {
                 name,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                customPrompt: customPrompt || ''
             }
         );
     } catch (error) {
@@ -839,6 +840,7 @@ export const createProjectSummary = async (summaryData: {
     title: string;
     abstract: string;
     body: string;
+    keyTakeaway: string;
     videoIds: string;
     isStale: boolean;
 }): Promise<ProjectSummary> => {
@@ -847,6 +849,7 @@ export const createProjectSummary = async (summaryData: {
         title: (summaryData.title || '').slice(0, 500),
         abstract: (summaryData.abstract || '').slice(0, 5000),
         body: (summaryData.body || '').slice(0, 20000),
+        keyTakeaway: (summaryData.keyTakeaway || '').slice(0, 2000),
         videoIds: (summaryData.videoIds || '').slice(0, 5000),
         generatedAt: new Date().toISOString(),
         isStale: summaryData.isStale ?? false
@@ -864,6 +867,7 @@ export const updateProjectSummary = async (projectId: string, updateData: Partia
     title: string;
     abstract: string;
     body: string;
+    keyTakeaway: string;
     videoIds: string;
     isStale: boolean;
 }>): Promise<ProjectSummary> => {
@@ -876,6 +880,7 @@ export const updateProjectSummary = async (projectId: string, updateData: Partia
     if (updateData.title !== undefined) payload.title = (updateData.title || '').slice(0, 500);
     if (updateData.abstract !== undefined) payload.abstract = (updateData.abstract || '').slice(0, 5000);
     if (updateData.body !== undefined) payload.body = (updateData.body || '').slice(0, 20000);
+    if (updateData.keyTakeaway !== undefined) payload.keyTakeaway = (updateData.keyTakeaway || '').slice(0, 2000);
     if (updateData.videoIds !== undefined) payload.videoIds = (updateData.videoIds || '').slice(0, 5000);
     if (updateData.isStale !== undefined) payload.isStale = updateData.isStale;
     
@@ -951,5 +956,34 @@ export const checkSummaryCacheValidity = async (projectId: string, currentVideoI
     } catch (error) {
         console.error('Failed to check summary cache validity:', error);
         return false;
+    }
+};
+
+export const updateProjectCustomPrompt = async (projectId: string, customPrompt: string): Promise<Project> => {
+    try {
+        return await databases.updateDocument<Project>(
+            'main',
+            COLLECTIONS.PROJECTS,
+            projectId,
+            {
+                customPrompt: customPrompt.slice(0, 10000)
+            }
+        );
+    } catch (error) {
+        console.error('Failed to update project custom prompt:', error);
+        throw error;
+    }
+};
+
+export const getProjectCustomPrompt = async (projectId: string, defaultPrompt: string): Promise<string> => {
+    try {
+        const project = await getProject(projectId);
+        if (project && project.customPrompt && project.customPrompt.trim()) {
+            return project.customPrompt;
+        }
+        return defaultPrompt;
+    } catch (error) {
+        console.error('Failed to get project custom prompt:', error);
+        return defaultPrompt;
     }
 };

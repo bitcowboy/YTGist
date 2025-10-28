@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types.js';
-import { getProjects, getProjectVideos, getSummary } from '$lib/server/database.js';
+import { getProjects, getProjectVideos, getSummary, getProjectSummary } from '$lib/server/database.js';
 
 export const load: PageServerLoad = async () => {
     try {
@@ -29,10 +29,18 @@ export const load: PageServerLoad = async () => {
                     }
                 }
                 
+                // Get project summary
+                const projectSummary = await getProjectSummary(project.$id);
+                
                 return {
                     ...project,
                     videos: videosWithDetails,
-                    videoCount: videosWithDetails.length
+                    videoCount: videosWithDetails.length,
+                    summary: projectSummary ? {
+                        title: projectSummary.title,
+                        abstract: projectSummary.abstract,
+                        isStale: projectSummary.isStale
+                    } : null
                 };
             })
         );

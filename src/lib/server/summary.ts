@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import prompt from "$lib/server/prompt.md?raw";
 import type { SummaryData, VideoMeta } from '$lib/types';
 import * as undici from 'undici';
+import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -59,9 +60,8 @@ export const getSummary = async (videoData: VideoMeta) => {
 			transcript: videoData.transcript
 		};
 
-		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
-			messages: [
+		const response = await openai.chat.completions.create(
+			createApiRequestOptions([
 				{
 					role: "system",
 					content: prompt
@@ -70,22 +70,25 @@ export const getSummary = async (videoData: VideoMeta) => {
 					role: "user",
 					content: JSON.stringify(data)
 				}
-			],
-			response_format: {
-				type: "json_schema",
-				json_schema: {
-					name: "video_summary",
-					schema: responseSchema
-				}
-			},
-		});
+			], responseSchema, {
+				keyTakeaway: "无法生成关键要点",
+				summary: "无法生成视频总结",
+				keyPoints: ["无法生成关键点"],
+				coreTerms: ["无法生成核心术语"]
+			})
+		);
 
 		const content = response.choices[0].message.content;
 		if (!content) {
 			throw new Error('No content received from OpenRouter');
 		}
 
-		return JSON.parse(content) as SummaryData;
+		return parseJsonResponse(content, {
+			keyTakeaway: "无法生成关键要点",
+			summary: "无法生成视频总结",
+			keyPoints: ["无法生成关键点"],
+			coreTerms: ["无法生成核心术语"]
+		}) as SummaryData;
 	} catch (error) {
 		console.error('Failed to generate summary:', error);
 		throw new Error('Failed to generate summary.');

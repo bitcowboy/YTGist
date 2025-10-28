@@ -139,39 +139,14 @@ const methodTwo = async (videoId: string) => {
         const info = await innertube.getInfo(videoId);
         console.log('[methodTwo] Video info retrieved successfully');
         
-        // Debug: Log available captions/tracks
-        let captions;
-        try {
-            captions = info.captions;
-            console.log('[methodTwo] Available captions:', {
-                hasCaptions: !!captions,
-                captionTracks: captions?.caption_tracks?.length || 0
-            });
-            
-            if (captions?.caption_tracks) {
-                console.log('[methodTwo] Caption tracks details:', captions.caption_tracks.map((track: any) => ({
-                    language: track.language_code,
-                    name: track.name?.simple_text,
-                    isTranslatable: track.is_translatable,
-                    kind: track.kind
-                })));
-            }
-        } catch (captionError) {
-            console.warn('[methodTwo] Failed to inspect captions:', captionError);
-        }
-        
         try {
             console.log('[methodTwo] Attempting to get transcript...');
             
-            // Try to get transcript with available language
-            let transcriptInfo;
-            const availableLanguages = captions?.caption_tracks?.map((track: any) => track.language_code) || [];
-            console.log('[methodTwo] Available languages:', availableLanguages);
-            
             // Try to get transcript (youtubei.js doesn't support language parameter)
             console.log('[methodTwo] Attempting to get transcript with default settings...');
-            transcriptInfo = await info.getTranscript();
-            
+            let transcriptInfo = await info.getTranscript();
+            console.log('[methodTwo] Transcript info:', transcriptInfo.languages);
+
             console.log('[methodTwo] Transcript info retrieved:', {
                 hasTranscript: !!transcriptInfo,
                 hasContent: !!transcriptInfo?.transcript,

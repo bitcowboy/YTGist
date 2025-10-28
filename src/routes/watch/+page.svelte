@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
 	import type { SummaryData } from '$lib/types';
 	import { fetchWithNonce } from '$lib/client/nonce';
 
@@ -18,6 +18,7 @@
 	import CommentsSummary from '$lib/components/summary/comments-summary.svelte';
 	import CommentsKeyPoints from '$lib/components/summary/comments-key-points.svelte';
 import { addTodayHistoryEntry } from '$lib/client/today-history';
+import { openSummaryStream } from '$lib/client/summary-stream';
 
 	const { data } = $props();
 
@@ -27,7 +28,16 @@ import { addTodayHistoryEntry } from '$lib/client/today-history';
 	let videoTitle = $state<string | null>(null);
 	let videoId = $state<string | null>(null);
 
-	let loading = $derived(!summaryData && !error);
+    let loading = $derived(!summaryData && !error);
+    // Pure server-driven per-char streaming display
+    let streamingText = $state<string>('');
+    let partialKeyTakeaway = $state<string>('');
+    let partialKeyPoints = $state<string[]>([]);
+    let partialCoreTerms = $state<string[]>([]);
+    let kpExpectNew = $state<boolean>(false);
+    let ctExpectNew = $state<boolean>(false);
+    let streamFinalized = $state<boolean>(false);
+    let streamController: { close: () => void } | null = null;
 
 onMount(() => {
     // 如果服务端已返回占位记录且标记为无字幕，直接显示无字幕页
@@ -52,7 +62,7 @@ onMount(() => {
     // 服务端已经处理了block检查，这里不需要客户端检查
 
 
-	if (!summaryData) {
+    if (!summaryData) {
 			const urlVideoId = new URLSearchParams(window.location.search).get('v');
 			if (!urlVideoId) {
 				error = 'No video ID found in the URL. Please make sure the URL is correct.';
@@ -62,9 +72,124 @@ onMount(() => {
 			// Store videoId for use in components
 			videoId = urlVideoId;
 
-			fetchWithNonce(`/api/get-summary?v=${urlVideoId}`)
-				.then(async (res) => {
-					if (!res.ok) {
+            // 使用SSE进行流式获取
+            (async () => {
+            streamController = await openSummaryStream(urlVideoId, {
+                onDelta: (delta) => {
+                    if (streamFinalized) return;
+                    streamingText += delta;
+                },
+                onComplete: (full) => {
+                    if (streamFinalized) return;
+                    streamingText = full;
+                },
+                onPartial: (partial: any) => {
+                    if (streamFinalized) return;
+                    const field = partial?._field;
+                    const isFinal = partial?._final === true;
+
+                    if (field === 'keyTakeaway' && typeof partial.keyTakeaway === 'string') {
+                        // overwrite, finalization not needed for array logic
+                        partialKeyTakeaway = partial.keyTakeaway;
+                        return;
+                    }
+
+                    if (field === 'keyPoints' && Array.isArray(partial.keyPoints)) {
+                        const text = partial.keyPoints[0] || '';
+                        if (kpExpectNew || partialKeyPoints.length === 0) {
+                            partialKeyPoints = [...partialKeyPoints, text];
+                            kpExpectNew = false;
+                        } else {
+                            partialKeyPoints = [...partialKeyPoints.slice(0, -1), text];
+                        }
+                        if (isFinal) kpExpectNew = true;
+                        return;
+                    }
+
+                    if (field === 'coreTerms' && Array.isArray(partial.coreTerms)) {
+                        const text = partial.coreTerms[0] || '';
+                        if (ctExpectNew || partialCoreTerms.length === 0) {
+                            partialCoreTerms = [...partialCoreTerms, text];
+                            ctExpectNew = false;
+                        } else {
+                            partialCoreTerms = [...partialCoreTerms.slice(0, -1), text];
+                        }
+                        if (isFinal) ctExpectNew = true;
+                        return;
+                    }
+
+                    // Fallback for old payloads without flags
+                    if (partial.keyTakeaway) partialKeyTakeaway = partial.keyTakeaway as string;
+                    if (partial.keyPoints && Array.isArray(partial.keyPoints)) partialKeyPoints = [...partialKeyPoints, ...partial.keyPoints as string[]];
+                    if (partial.coreTerms && Array.isArray(partial.coreTerms)) partialCoreTerms = [...partialCoreTerms, ...partial.coreTerms as string[]];
+                },
+                onFinal: (data) => {
+                    streamFinalized = true;
+                    summaryData = data;
+                    error = null;
+                    isNoSubtitlesError = false;
+                    window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
+                    window.dispatchEvent(new CustomEvent('yg:channelInfo', { detail: { channelId: data.channelId, channelName: data.author } }));
+                    addTodayHistoryEntry(data);
+                    // set streaming states to final payload to avoid flicker/blanking
+                    streamingText = '';
+                    partialKeyTakeaway = data.keyTakeaway || '';
+                    partialKeyPoints = data.keyPoints || [];
+                    partialCoreTerms = data.coreTerms || [];
+                    kpExpectNew = false;
+                    ctExpectNew = false;
+                },
+                onError: async (msg) => {
+                    // 与现有错误语义对齐
+                    if (msg === 'CHANNEL_BLOCKED') {
+                        error = 'CHANNEL_BLOCKED';
+                        videoId = urlVideoId;
+                        try {
+                            const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
+                            if (videoDataRes.ok) {
+                                const videoData = await videoDataRes.json();
+                                videoTitle = videoData.title;
+                                if (videoData.author && videoData.channelId) {
+                                    window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+                                        detail: { channelId: videoData.channelId, channelName: videoData.author } 
+                                    }));
+                                }
+                            }
+                        } catch {}
+                        return;
+                    }
+                    if (msg === 'NO_SUBTITLES_AVAILABLE') {
+                        isNoSubtitlesError = true;
+                        error = 'NO_SUBTITLES_AVAILABLE';
+                        try {
+                            const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
+                            if (videoDataRes.ok) {
+                                const videoData = await videoDataRes.json();
+                                videoTitle = videoData.title;
+                                if (videoData.author && videoData.channelId) {
+                                    window.dispatchEvent(new CustomEvent('yg:channelInfo', { 
+                                        detail: { channelId: videoData.channelId, channelName: videoData.author } 
+                                    }));
+                                }
+                            }
+                        } catch {}
+                        return;
+                    }
+                    if (msg === 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE') {
+                        isNoSubtitlesError = false;
+                        error = 'TRANSCRIPT_TEMPORARILY_UNAVAILABLE';
+                        return;
+                    }
+                    error = msg || 'An unknown error occurred. The video might be private or the summary could not be generated.';
+                    isNoSubtitlesError = false;
+                    window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
+                }
+            });
+            })();
+            /* Previous non-streaming fallback retained (commented for reference)
+            fetchWithNonce(`/api/get-summary?v=${urlVideoId}`)
+                .then(async (res) => {
+                    if (!res.ok) {
 						// Try to get a more specific error message from the API response
 						let errorText;
 						let responseText;
@@ -157,7 +282,7 @@ onMount(() => {
 							errorText || `The server responded with status ${res.status}. Please try again.`
 						);
 					}
-					return res.json();
+                    return res.json();
 				})
 		.then((data: SummaryData) => {
 			if (data) {
@@ -216,7 +341,8 @@ onMount(() => {
 			window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
 		}
 				});
-		}
+            */
+        }
 
 	if (summaryData) {
 		// 通知导航栏频道信息
@@ -224,6 +350,13 @@ onMount(() => {
 		addTodayHistoryEntry(summaryData);
 	}
 	});
+
+onDestroy(() => {
+    if (streamController) {
+        try { streamController.close(); } catch {}
+        streamController = null;
+    }
+});
 </script>
 
 <svelte:head>
@@ -236,8 +369,20 @@ onMount(() => {
 
 
 {#if loading}
-	<FloatingLoadingIndicator />
-	<Skeletons />
+    {#if streamingText && streamingText.length > 0}
+        <div class="container mx-auto max-w-3xl px-4 py-4">
+            <div class="space-y-4">
+                <KeyTakeaway summaryData={{ ...(summaryData || {} as any), keyTakeaway: partialKeyTakeaway || '' } as any} />
+                <Summary summaryData={{ ...(summaryData || {} as any) }} streamingText={streamingText} />
+                {#if partialKeyPoints.length > 0}
+                    <KeyPoints summaryData={{ ...(summaryData || {} as any), keyPoints: partialKeyPoints } as any} />
+                {/if}
+            </div>
+        </div>
+    {:else}
+        <FloatingLoadingIndicator />
+        <Skeletons />
+    {/if}
 {:else if error && isNoSubtitlesError}
 	<NoSubtitles videoTitle={videoTitle} videoId={videoId} />
 {:else if error === 'CHANNEL_BLOCKED'}
@@ -250,7 +395,7 @@ onMount(() => {
 			<!-- VideoInfo {summaryData} -->
 			<KeyTakeaway {summaryData} />
 			<!-- <Divider /> -->
-			<Summary {summaryData} />
+            <Summary {summaryData} streamingText={streamingText} />
 			<!-- <Divider /> -->
 			<KeyPoints {summaryData} />
 			<!-- <Divider /> -->

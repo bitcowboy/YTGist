@@ -2,6 +2,7 @@ import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } 
 import OpenAI from 'openai';
 import type { SummaryData } from '$lib/types.js';
 import * as undici from 'undici';
+import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -101,9 +102,8 @@ Please analyze these videos and:
 
 Focus on finding connections, patterns, and overarching themes across the videos. Output should be in Simplified Chinese.`;
 
-		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
-			messages: [
+		const response = await openai.chat.completions.create(
+			createApiRequestOptions([
 				{
 					role: "system",
 					content: "You are an AI assistant that analyzes video content and creates insightful daily summaries. Group related videos by theme and identify connections between different topics."
@@ -112,22 +112,23 @@ Focus on finding connections, patterns, and overarching themes across the videos
 					role: "user",
 					content: prompt
 				}
-			],
-			response_format: {
-				type: "json_schema",
-				json_schema: {
-					name: "daily_summary",
-					schema: dailySummarySchema
-				}
-			},
-		});
+			], dailySummarySchema, {
+				overview: "今日无视频内容可总结",
+				themes: [],
+				keyInsights: []
+			})
+		);
 
 		const content = response.choices[0].message.content;
 		if (!content) {
 			throw new Error('No content received from OpenRouter');
 		}
 
-		return JSON.parse(content);
+		return parseJsonResponse(content, {
+			overview: "今日无视频内容可总结",
+			themes: [],
+			keyInsights: []
+		});
 	} catch (error) {
 		console.error('Failed to generate daily summary:', error);
 		throw new Error('Failed to generate daily summary');
