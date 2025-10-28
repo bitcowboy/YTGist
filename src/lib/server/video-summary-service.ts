@@ -9,9 +9,7 @@ import * as undici from 'undici';
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import prompt from '$lib/server/prompt.md?raw';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
-import { PassThrough } from 'node:stream';
 import StreamJson from 'stream-json';
-import Assembler from 'stream-json/Assembler';
 
 export interface VideoSummaryResult {
     success: boolean;
@@ -492,9 +490,6 @@ export const generateVideoSummaryStream = async (
                             }
                         }
 
-                        console.log('keyPoints', parsed.keyPoints);
-                        console.log('coreTerms', parsed.coreTerms);
-                        
                         // 如果所有字段都完整了，标记完成
                         if (parsed.summary && parsed.keyTakeaway && parsed.keyPoints && parsed.coreTerms) {
                             emitters.onComplete?.(parsed.summary);
