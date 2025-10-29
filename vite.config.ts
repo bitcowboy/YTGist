@@ -45,7 +45,8 @@ export default defineConfig(({ command, mode }) => {
 				registerType: 'autoUpdate',
 				devOptions: { enabled: true },
 				workbox: {
-					globPatterns: ['**/*.{js,css,html,ico,png,svg,ttf,woff,woff2}']
+					globPatterns: ['**/*.{js,css,html,ico,png,svg,ttf,woff,woff2}'],
+					globIgnores: ['**/font/KingHwaOldSong.ttf']
 				},
 				manifest: false
 			}),
