@@ -4,6 +4,13 @@ import type { SummaryData, ChatMessage } from '$lib/types';
 import * as undici from 'undici';
 import { getTranscriptByVideoId } from './database.js';
 
+// 流式聊天响应的事件发射器接口
+export interface ChatStreamEmitters {
+	onDelta?: (delta: string) => void;
+	onComplete?: (fullResponse: string) => void;
+	onError?: (error: string) => void;
+}
+
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
 
@@ -139,5 +146,142 @@ ${videoContext}
 	} catch (error) {
 		console.error('Failed to generate chat response:', error);
 		throw new Error('Failed to generate AI response.');
+	}
+};
+
+/**
+ * 生成流式聊天响应
+ * 支持实时流式输出AI回答
+ */
+export const generateChatResponseStream = async (
+	userMessage: string,
+	videoId: string,
+	videoTitle: string,
+	summaryData: SummaryData,
+	conversationHistory?: ChatMessage[],
+	emitters: ChatStreamEmitters = {}
+): Promise<string> => {
+	const startTime = Date.now();
+	let llmRequestStart = 0;
+	let firstTokenTime = 0;
+	let llmFirstResponseTime = 0;
+	let fullResponse = '';
+
+	try {
+		console.log(`[chat-stream] 🚀 Starting streaming chat for video ${videoId}`);
+		
+		// 从数据库获取原始字幕
+		const transcript = await getTranscriptByVideoId(videoId);
+		
+		// 构建视频上下文信息
+		const videoContext = `
+视频标题: ${videoTitle}
+视频ID: ${videoId}
+视频作者: ${summaryData.author}
+视频描述: ${summaryData.description}
+
+视频总结:
+${summaryData.summary}
+
+关键要点:
+${summaryData.keyTakeaway}
+
+关键点列表:
+${summaryData.keyPoints?.join('\n') || '无'}
+
+核心术语:
+${summaryData.coreTerms?.join(', ') || '无'}
+
+${summaryData.commentsSummary ? `观众评论总结:
+${summaryData.commentsSummary}
+
+观众关注要点:
+${summaryData.commentsKeyPoints?.join('\n') || '无'}
+
+评论数量: ${summaryData.commentsCount || 0} 条` : '注意: 该视频暂无观众评论数据'}
+
+${transcript ? `原始字幕内容:
+${transcript}` : '注意: 该视频没有可用的字幕内容'}
+		`.trim();
+
+		// 构建消息数组，包含对话历史
+		const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+			{
+				role: "system",
+				content: chatSystemPrompt
+			}
+		];
+
+		// 如果有对话历史，添加到消息数组中
+		if (conversationHistory && conversationHistory.length > 0) {
+			// 添加对话历史（限制最近10轮对话以避免token过多）
+			const recentHistory = conversationHistory.slice(-10);
+			for (const msg of recentHistory) {
+				messages.push({
+					role: msg.role as "user" | "assistant",
+					content: msg.content
+				});
+			}
+		}
+
+		// 添加当前用户消息
+		messages.push({
+			role: "user",
+			content: `基于以下视频信息，请回答用户的问题：
+
+视频信息:
+${videoContext}
+
+用户问题: ${userMessage}
+
+请基于视频内容回答用户的问题。如果问题与视频内容无关，请礼貌地说明你只能回答关于这个视频的问题。`
+		});
+
+		llmRequestStart = Date.now();
+		console.log(`📊 Chat ${videoId} - LLM request initiated at ${llmRequestStart}`);
+
+		// 创建流式请求
+		const stream = await openai.chat.completions.create({
+			model: OPENROUTER_MODEL,
+			messages,
+			stream: true,
+		});
+
+		// 处理流式响应
+		for await (const chunk of stream) {
+			// 记录第一个token到达时间
+			if (firstTokenTime === 0) {
+				firstTokenTime = Date.now();
+				llmFirstResponseTime = firstTokenTime - llmRequestStart;
+				console.log(`📊 Chat ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
+			}
+
+			const delta = chunk.choices[0]?.delta?.content || '';
+			if (delta) {
+				fullResponse += delta;
+				emitters.onDelta?.(delta);
+			}
+		}
+
+		const totalTime = Date.now() - startTime;
+		console.log(`🎉 Streaming chat completed for ${videoId} in ${totalTime}ms`, {
+			llmTiming: {
+				requestToFirstToken: llmFirstResponseTime,
+				totalGenerationTime: Date.now() - llmRequestStart,
+				tokensPerSecond: llmFirstResponseTime > 0 ? Math.round(1000 / llmFirstResponseTime * 100) / 100 : 0
+			},
+			responseLength: fullResponse.length,
+			hasTranscript: !!transcript,
+			conversationHistoryLength: conversationHistory?.length || 0
+		});
+
+		emitters.onComplete?.(fullResponse);
+		return fullResponse;
+
+	} catch (error) {
+		console.error('Failed to generate streaming chat response:', error);
+		const errorMessage = '抱歉，我暂时无法回复。请稍后再试。';
+		emitters.onError?.(errorMessage);
+		throw new Error('Failed to generate streaming AI response.');
 	}
 };
