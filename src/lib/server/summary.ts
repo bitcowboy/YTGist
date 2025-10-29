@@ -22,7 +22,7 @@ const openai = new OpenAI({
 
 const responseSchema = {
 	type: "object",
-	required: ["keyTakeaway", "summary", "keyPoints", "coreTerms"],
+	required: ["keyTakeaway", "summary", "keyPoints", "coreTerms", "commentsSummary", "commentsKeyPoints"],
 	properties: {
 		keyTakeaway: {
 			type: "string",
@@ -42,6 +42,15 @@ const responseSchema = {
 				type: "string",
 			},
 		},
+		commentsSummary: {
+			type: "string",
+		},
+		commentsKeyPoints: {
+			type: "array",
+			items: {
+				type: "string",
+			},
+		},
 	},
 	additionalProperties: false,
 };
@@ -53,11 +62,22 @@ export const getSummary = async (videoData: VideoMeta) => {
 			throw new Error('NO_SUBTITLES_AVAILABLE');
 		}
 
+		// 准备评论数据，限制长度以避免token过多
+		let commentsText = '';
+		if (videoData.comments && videoData.comments.length > 0) {
+			commentsText = videoData.comments
+				.slice(0, 30) // 限制最多30条评论
+				.map(comment => `作者: ${comment.author}\n内容: ${comment.text}\n点赞数: ${comment.likeCount}`)
+				.join('\n\n');
+		}
+
 		const data = {
 			title: videoData.title,
 			description: videoData.description,
 			author: videoData.author,
-			transcript: videoData.transcript
+			transcript: videoData.transcript,
+			comments: commentsText,
+			commentsCount: videoData.commentsCount || 0
 		};
 
 		const response = await openai.chat.completions.create(
@@ -74,7 +94,9 @@ export const getSummary = async (videoData: VideoMeta) => {
 				keyTakeaway: "无法生成关键要点",
 				summary: "无法生成视频总结",
 				keyPoints: ["无法生成关键点"],
-				coreTerms: ["无法生成核心术语"]
+				coreTerms: ["无法生成核心术语"],
+				commentsSummary: "",
+				commentsKeyPoints: []
 			})
 		);
 
@@ -87,7 +109,9 @@ export const getSummary = async (videoData: VideoMeta) => {
 			keyTakeaway: "无法生成关键要点",
 			summary: "无法生成视频总结",
 			keyPoints: ["无法生成关键点"],
-			coreTerms: ["无法生成核心术语"]
+			coreTerms: ["无法生成核心术语"],
+			commentsSummary: "",
+			commentsKeyPoints: []
 		}) as SummaryData;
 	} catch (error) {
 		console.error('Failed to generate summary:', error);

@@ -8,6 +8,7 @@ Here are the input, output and rules:
 - Author
 - Description
 - Transcript
+- Audience Comments (optional)
 
 
 ## Output
@@ -24,6 +25,11 @@ Single JSON object only:
   "coreTerms": [
     "Important term",
     "Another key term"
+  ],
+  "commentsSummary": "Audience feedback summary.",
+  "commentsKeyPoints": [
+    "Key audience concern",
+    "Another audience insight"
   ]
 }
 ```
@@ -43,5 +49,9 @@ Single JSON object only:
 - Try to keep 4 to 7 points, feel free to use more if needed. 
 
 **coreTerms**: Central terms/concepts mentioned. Use `[]` if none.
+
+**commentsSummary**: (If comments provided) 简洁总结观众的主要观点和情感，50-100字。如果无评论，返回空字符串。
+
+**commentsKeyPoints**: (If comments provided) 3-5个关键要点，突出观众最关心的话题。如果无评论，返回空数组。
 
 Write clearly for general audience. Use casual tone. Prioritize actionable content over background info. And don't forget to **bold** key terms please.

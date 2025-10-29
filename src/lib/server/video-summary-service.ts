@@ -25,14 +25,18 @@ export interface VideoSummaryResult {
 export const generateVideoSummary = async (videoId: string): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
-        console.log(`Processing video ${videoId}`);
+        console.log(`[video-summary] 🚀 Starting unified summary generation for video ${videoId}`);
         
-        // 1. 获取视频数据（包含评论总结）
+        // 1. 获取视频数据（包含评论数据）
         const step1Start = Date.now();
         const videoData = await getVideoData(videoId);
-        console.log(`[video-summary-stream] step1 getVideoData ${Date.now() - step1Start}ms`, { videoId, channelId: videoData.channelId });
         const step1Time = Date.now() - step1Start;
-        console.log(`📊 Video ${videoId} - Step 1 (Get video data): ${step1Time}ms`, { channelId: videoData.channelId, author: videoData.author });
+        console.log(`📊 Video ${videoId} - Step 1 (Get video data): ${step1Time}ms`, { 
+            channelId: videoData.channelId, 
+            author: videoData.author,
+            hasComments: videoData.comments?.length || 0,
+            commentsCount: videoData.commentsCount || 0
+        });
 
         // 2. 频道阻止检查
         const step2Start = Date.now();
@@ -48,11 +52,18 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
             };
         }
 
-        // 3. 生成AI总结
+        // 3. 统一AI生成（视频总结 + 评论总结）
         const step3Start = Date.now();
         const summaryResult = await getSummary(videoData);
         const step3Time = Date.now() - step3Start;
-        console.log(`📊 Video ${videoId} - Step 3 (Generate summary): ${step3Time}ms`);
+        console.log(`📊 Video ${videoId} - Step 3 (Unified AI generation): ${step3Time}ms`, {
+            summaryLength: summaryResult.summary.length,
+            keyTakeawayLength: summaryResult.keyTakeaway.length,
+            keyPointsCount: summaryResult.keyPoints.length,
+            coreTermsCount: summaryResult.coreTerms.length,
+            commentsSummaryLength: summaryResult.commentsSummary?.length || 0,
+            commentsKeyPointsCount: summaryResult.commentsKeyPoints?.length || 0
+        });
 
         // 4. 保存字幕
         const step4Start = Date.now();
@@ -82,9 +93,9 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
             hasSubtitles: videoData.hasSubtitles,
             publishedAt: videoData.publishedAt,
             hits: 0,
-            // 包含评论总结
-            commentsSummary: clamp(videoData.commentsSummary || '', 1000),
-            commentsKeyPoints: videoData.commentsKeyPoints || [],
+            // 统一生成的评论总结
+            commentsSummary: clamp(summaryResult.commentsSummary || '', 1000),
+            commentsKeyPoints: summaryResult.commentsKeyPoints || [],
             commentsCount: videoData.commentsCount || 0
         };
 
@@ -113,11 +124,29 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
             );
         }
         const step5Time = Date.now() - step5Start;
-        console.log(`📊 Video ${videoId} - Step 5 (Save to database): ${step5Time}ms`);
+        console.log(`📊 Video ${videoId} - Step 5 (Save to database): ${step5Time}ms`, {
+            operation: existing.total > 0 ? 'update' : 'create',
+            summaryDataSize: JSON.stringify(summaryData).length
+        });
 
         const totalTime = Date.now() - startTime;
-        console.log(`✅ Successfully processed video: ${videoId} (total: ${totalTime}ms)`);
-        console.log(`📊 Video ${videoId} breakdown: getData=${step1Time}ms, channelCheck=${step2Time}ms, generate=${step3Time}ms, transcript=${step4Time}ms, database=${step5Time}ms`);
+        console.log(`🎉 Unified summary generation completed for ${videoId} in ${totalTime}ms`, {
+            breakdown: {
+                step1_getVideoData: step1Time,
+                step2_channelCheck: step2Time,
+                step3_unifiedAI: step3Time,
+                step4_saveTranscript: step4Time,
+                step5_saveToDB: step5Time,
+                total: totalTime
+            },
+            performance: {
+                hasComments: (videoData.comments?.length || 0) > 0,
+                commentsCount: videoData.commentsCount || 0,
+                transcriptLength: videoData.transcript.length,
+                summaryLength: summaryResult.summary.length,
+                commentsSummaryLength: summaryResult.commentsSummary?.length || 0
+            }
+        });
         return {
             success: true,
             summaryData: finalSummaryData
@@ -176,28 +205,64 @@ export const generateVideoSummaryStream = async (
 ): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
-        // 1. 获取视频数据（包含评论总结）
+        console.log(`[video-summary-stream] 🚀 Starting unified summary generation for video ${videoId}`);
+        
+        // 1. 获取视频数据（包含评论数据）
+        const step1Start = Date.now();
         const videoData = await getVideoData(videoId);
+        const step1Time = Date.now() - step1Start;
+        console.log(`📊 Video ${videoId} - Step 1 (Get video data): ${step1Time}ms`, { 
+            channelId: videoData.channelId, 
+            author: videoData.author,
+            hasComments: videoData.comments?.length || 0,
+            commentsCount: videoData.commentsCount || 0
+        });
 
         // 2. 频道阻止检查
         const step2Start = Date.now();
         const blocked = await isChannelBlocked(videoData.channelId);
-        console.log(`[video-summary-stream] step2 channelCheck ${Date.now() - step2Start}ms blocked=${blocked}`);
+        const step2Time = Date.now() - step2Start;
+        console.log(`📊 Video ${videoId} - Step 2 (Channel check): ${step2Time}ms - blocked: ${blocked}`);
         if (blocked) {
             return { success: false, error: 'Channel is blocked', errorType: 'CHANNEL_BLOCKED' };
         }
 
-        // 3. 流式生成完整的JSON响应
+        // 3. 准备评论数据
+        const step3Start = Date.now();
+        let commentsText = '';
+        if (videoData.comments && videoData.comments.length > 0) {
+            commentsText = videoData.comments
+                .slice(0, 30) // 限制最多30条评论
+                .map(comment => `作者: ${comment.author}\n内容: ${comment.text}\n点赞数: ${comment.likeCount}`)
+                .join('\n\n');
+        }
+        const step3Time = Date.now() - step3Start;
+        console.log(`📊 Video ${videoId} - Step 3 (Prepare comments data): ${step3Time}ms`, {
+            commentsProcessed: videoData.comments?.slice(0, 30).length || 0,
+            commentsTextLength: commentsText.length
+        });
+
         const userPayload = {
             title: videoData.title,
             description: videoData.description,
             author: videoData.author,
             transcript: videoData.transcript,
+            comments: commentsText,
+            commentsCount: videoData.commentsCount || 0
         };
 
         if (!videoData.hasSubtitles || !videoData.transcript || videoData.transcript.trim() === '') {
             return { success: false, error: 'No subtitles available', errorType: 'NO_SUBTITLES' };
         }
+
+        // 4. 统一AI流式生成（视频总结 + 评论总结）
+        const step4Start = Date.now();
+        let step4Time = 0;
+        console.log(`📊 Video ${videoId} - Step 4 (Unified AI generation) starting...`, {
+            transcriptLength: videoData.transcript.length,
+            commentsLength: commentsText.length,
+            totalPayloadSize: JSON.stringify(userPayload).length
+        });
 
         let streamedContent = '';
         let parsedResult: any = null;
@@ -206,7 +271,14 @@ export const generateVideoSummaryStream = async (
         let keyTakeaway: string = '';
         let keyPoints: string[] = [];
         let coreTerms: string[] = [];
+        let commentsSummary: string = '';
+        let commentsKeyPoints: string[] = [];
         let hasStreamActivity: boolean = false;
+        
+        // LLM响应时间统计
+        let llmRequestStart: number = 0;
+        let firstTokenTime: number = 0;
+        let llmFirstResponseTime: number = 0;
         try {
             // 使用标准JSON格式，让AI返回完整的结构化数据
             const systemInstruction = `${prompt}\n\n请按照标准JSON格式返回结果，包含以下字段：\n` +
@@ -214,11 +286,15 @@ export const generateVideoSummaryStream = async (
                 `  "summary": "完整的视频总结内容",\n` +
                 `  "keyTakeaway": "关键要点",\n` +
                 `  "keyPoints": ["要点1", "要点2", "要点3"],\n` +
-                `  "coreTerms": ["术语1", "术语2"]\n` +
+                `  "coreTerms": ["术语1", "术语2"],\n` +
+                `  "commentsSummary": "观众评论总结",\n` +
+                `  "commentsKeyPoints": ["观众关注点1", "观众关注点2"]\n` +
                 `}\n\n` +
                 `请确保返回的是有效的JSON格式，不要包含任何其他文本或解释。`;
 
-            const step3Start = Date.now();
+            llmRequestStart = Date.now();
+            console.log(`📊 Video ${videoId} - LLM request initiated at ${llmRequestStart}`);
+            
             const stream = await openai.chat.completions.create({
                 model: OPENROUTER_MODEL,
                 stream: true,
@@ -271,14 +347,25 @@ export const generateVideoSummaryStream = async (
                 let inSummaryString = false;
                 let expectKeyTakeawayString = false;
                 let inKeyTakeawayString = false;
-                let pendingArrayFor: 'none' | 'keyPoints' | 'coreTerms' = 'none';
+                let expectCommentsSummaryString = false;
+                let inCommentsSummaryString = false;
+                let pendingArrayFor: 'none' | 'keyPoints' | 'coreTerms' | 'commentsKeyPoints' = 'none';
                 let inKeyPoints = false;
                 let inCoreTerms = false;
+                let inCommentsKeyPoints = false;
                 let keyTakeawayText = '';
                 let currentKeyPointText = '';
                 let currentCoreTermText = '';
+                let currentCommentsKeyPointText = '';
 
                 p.on('data', (chunk: any) => {
+                    // 记录第一个token到达时间
+                    if (firstTokenTime === 0) {
+                        firstTokenTime = Date.now();
+                        llmFirstResponseTime = firstTokenTime - llmRequestStart;
+                        console.log(`📊 Video ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
+                    }
+                    
                     // Token-level streaming for summary/keyPoints/coreTerms
                     try {
                         const name = chunk?.name;
@@ -289,10 +376,14 @@ export const generateVideoSummaryStream = async (
                                 expectSummaryString = true;
                             } else if (value === 'keyTakeaway') {
                                 expectKeyTakeawayString = true;
+                            } else if (value === 'commentsSummary') {
+                                expectCommentsSummaryString = true;
                             } else if (value === 'keyPoints') {
                                 pendingArrayFor = 'keyPoints';
                             } else if (value === 'coreTerms') {
                                 pendingArrayFor = 'coreTerms';
+                            } else if (value === 'commentsKeyPoints') {
+                                pendingArrayFor = 'commentsKeyPoints';
                             }
                         } else if (name === 'startString') {
                             if (expectSummaryString) {
@@ -301,6 +392,9 @@ export const generateVideoSummaryStream = async (
                             } else if (expectKeyTakeawayString) {
                                 inKeyTakeawayString = true;
                                 expectKeyTakeawayString = false;
+                            } else if (expectCommentsSummaryString) {
+                                inCommentsSummaryString = true;
+                                expectCommentsSummaryString = false;
                             }
                         } else if (name === 'stringChunk') {
                             if (inSummaryString && typeof value === 'string' && value.length > 0) {
@@ -313,6 +407,10 @@ export const generateVideoSummaryStream = async (
                                 // emit updated keyTakeaway incrementally
                                 emitters.onPartial?.({ keyTakeaway: keyTakeawayText, _field: 'keyTakeaway', _final: false } as any);
                                 hasStreamActivity = true;
+                            } else if (inCommentsSummaryString && typeof value === 'string' && value.length > 0) {
+                                commentsSummary += value;
+                                emitters.onPartial?.({ commentsSummary, _field: 'commentsSummary', _final: false } as any);
+                                hasStreamActivity = true;
                             } else if (inKeyPoints && typeof value === 'string' && value.length > 0) {
                                 // incremental per-character/chunk for current keyPoint item
                                 currentKeyPointText += value;
@@ -321,6 +419,10 @@ export const generateVideoSummaryStream = async (
                             } else if (inCoreTerms && typeof value === 'string' && value.length > 0) {
                                 currentCoreTermText += value;
                                 emitters.onPartial?.({ coreTerms: [currentCoreTermText], _field: 'coreTerms', _final: false } as any);
+                                hasStreamActivity = true;
+                            } else if (inCommentsKeyPoints && typeof value === 'string' && value.length > 0) {
+                                currentCommentsKeyPointText += value;
+                                emitters.onPartial?.({ commentsKeyPoints: [currentCommentsKeyPointText], _field: 'commentsKeyPoints', _final: false } as any);
                                 hasStreamActivity = true;
                             }
                         } else if (name === 'stringValue') {
@@ -336,7 +438,12 @@ export const generateVideoSummaryStream = async (
                                 emitters.onPartial?.({ keyTakeaway: keyTakeawayText, _field: 'keyTakeaway', _final: true } as any);
                                 inKeyTakeawayString = false;
                                 hasStreamActivity = true;
-                            } else if ((inKeyPoints || inCoreTerms) && typeof value === 'string') {
+                            } else if (inCommentsSummaryString && typeof value === 'string') {
+                                commentsSummary = value;
+                                emitters.onPartial?.({ commentsSummary, _field: 'commentsSummary', _final: true } as any);
+                                inCommentsSummaryString = false;
+                                hasStreamActivity = true;
+                            } else if ((inKeyPoints || inCoreTerms || inCommentsKeyPoints) && typeof value === 'string') {
                                 if (inKeyPoints) {
                                     currentKeyPointText = value; // ensure final
                                     keyPoints.push(currentKeyPointText);
@@ -348,6 +455,12 @@ export const generateVideoSummaryStream = async (
                                     coreTerms.push(currentCoreTermText);
                                     emitters.onPartial?.({ coreTerms: [currentCoreTermText], _field: 'coreTerms', _final: true } as any);
                                     currentCoreTermText = '';
+                                    hasStreamActivity = true;
+                                } else if (inCommentsKeyPoints) {
+                                    currentCommentsKeyPointText = value;
+                                    commentsKeyPoints.push(currentCommentsKeyPointText);
+                                    emitters.onPartial?.({ commentsKeyPoints: [currentCommentsKeyPointText], _field: 'commentsKeyPoints', _final: true } as any);
+                                    currentCommentsKeyPointText = '';
                                     hasStreamActivity = true;
                                 }
                             }
@@ -361,12 +474,18 @@ export const generateVideoSummaryStream = async (
                                 inCoreTerms = true;
                                 pendingArrayFor = 'none';
                                 currentCoreTermText = '';
+                            } else if (pendingArrayFor === 'commentsKeyPoints') {
+                                inCommentsKeyPoints = true;
+                                pendingArrayFor = 'none';
+                                currentCommentsKeyPointText = '';
                             }
                         } else if (name === 'endArray') {
                             inKeyPoints = false;
                             inCoreTerms = false;
+                            inCommentsKeyPoints = false;
                             currentKeyPointText = '';
                             currentCoreTermText = '';
+                            currentCommentsKeyPointText = '';
                         }
                     } catch {}
 
@@ -405,7 +524,21 @@ export const generateVideoSummaryStream = async (
                                 hasStreamActivity = true;
                             }
                         }
-                        if (parsed.summary && parsed.keyTakeaway && parsed.keyPoints && parsed.coreTerms) {
+                        if (parsed.commentsSummary && parsed.commentsSummary !== commentsSummary) {
+                            commentsSummary = parsed.commentsSummary;
+                            emitters.onPartial?.({ commentsSummary });
+                            hasStreamActivity = true;
+                        }
+                        if (parsed.commentsKeyPoints && Array.isArray(parsed.commentsKeyPoints)) {
+                            const newCommentsPoints = parsed.commentsKeyPoints.slice(commentsKeyPoints.length);
+                            if (newCommentsPoints.length > 0) {
+                                commentsKeyPoints = [...parsed.commentsKeyPoints];
+                                emitters.onPartial?.({ commentsKeyPoints: newCommentsPoints });
+                                hasStreamActivity = true;
+                            }
+                        }
+                        if (parsed.summary && parsed.keyTakeaway && parsed.keyPoints && parsed.coreTerms && 
+                            parsed.commentsSummary !== undefined && parsed.commentsKeyPoints !== undefined) {
                             emitters.onComplete?.(parsed.summary);
                             parsedResult = parsed;
                             // stop feeding the parser; we'll finalize downstream
@@ -425,6 +558,13 @@ export const generateVideoSummaryStream = async (
             }
             
             for await (const chunk of stream as any) {
+                // 记录第一个token到达时间
+                if (firstTokenTime === 0) {
+                    firstTokenTime = Date.now();
+                    llmFirstResponseTime = firstTokenTime - llmRequestStart;
+                    console.log(`📊 Video ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
+                }
+                
                 const raw = chunk?.choices?.[0]?.delta?.content ?? '';
                 const part = raw.replace(/```(?:json)?\s*|```/gi, '').replace(/^\uFEFF/, '');
                 if (!part) continue;
@@ -489,12 +629,36 @@ export const generateVideoSummaryStream = async (
                                 hasStreamActivity = true;
                             }
                         }
+                        
+                        if (parsed.commentsSummary && parsed.commentsSummary !== commentsSummary) {
+                            commentsSummary = parsed.commentsSummary;
+                            emitters.onPartial?.({ commentsSummary });
+                            hasStreamActivity = true;
+                        }
+                        
+                        if (parsed.commentsKeyPoints && Array.isArray(parsed.commentsKeyPoints)) {
+                            const newCommentsPoints = parsed.commentsKeyPoints.slice(commentsKeyPoints.length);
+                            if (newCommentsPoints.length > 0) {
+                                commentsKeyPoints = [...parsed.commentsKeyPoints];
+                                emitters.onPartial?.({ commentsKeyPoints: newCommentsPoints });
+                                hasStreamActivity = true;
+                            }
+                        }
 
                         // 如果所有字段都完整了，标记完成
-                        if (parsed.summary && parsed.keyTakeaway && parsed.keyPoints && parsed.coreTerms) {
+                        if (parsed.summary && parsed.keyTakeaway && parsed.keyPoints && parsed.coreTerms && 
+                            parsed.commentsSummary !== undefined && parsed.commentsKeyPoints !== undefined) {
                             emitters.onComplete?.(parsed.summary);
                             parsedResult = parsed;
-                            console.log(`[video-summary-stream] JSON complete len=${parsed.summary.length} elapsed=${Date.now() - step3Start}ms`);
+                            step4Time = Date.now() - step4Start;
+                            console.log(`📊 Video ${videoId} - Step 4 (Unified AI generation) completed: ${step4Time}ms`, {
+                                summaryLength: parsed.summary.length,
+                                keyTakeawayLength: parsed.keyTakeaway.length,
+                                keyPointsCount: parsed.keyPoints.length,
+                                coreTermsCount: parsed.coreTerms.length,
+                                commentsSummaryLength: parsed.commentsSummary.length,
+                                commentsKeyPointsCount: parsed.commentsKeyPoints.length
+                            });
                             break;
                         }
                     }
@@ -519,6 +683,8 @@ export const generateVideoSummaryStream = async (
                 keyTakeaway: keyTakeaway || '',
                 keyPoints: keyPoints || [],
                 coreTerms: coreTerms || [],
+                commentsSummary: commentsSummary || '',
+                commentsKeyPoints: commentsKeyPoints || [],
             };
             console.log('[video-summary-stream] finalize source = accumulators');
         } else {
@@ -530,11 +696,19 @@ export const generateVideoSummaryStream = async (
         }
 
         // 5. 保存字幕
-        const step4Start = Date.now();
-        try { await upsertTranscript(videoId, videoData.transcript); } catch {}
-        console.log(`[video-summary-stream] step4 saveTranscript ${Date.now() - step4Start}ms`);
+        const step5Start = Date.now();
+        let step5Time = 0;
+        try { 
+            await upsertTranscript(videoId, videoData.transcript); 
+            step5Time = Date.now() - step5Start;
+            console.log(`📊 Video ${videoId} - Step 5 (Save transcript): ${step5Time}ms`);
+        } catch (e) { 
+            step5Time = Date.now() - step5Start;
+            console.warn(`📊 Video ${videoId} - Step 5 (Save transcript) failed: ${step5Time}ms - ${e}`); 
+        }
 
         // 6. 组装并保存数据库记录
+        const step6Start = Date.now();
         const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
         const summaryData = {
             videoId,
@@ -549,12 +723,12 @@ export const generateVideoSummaryStream = async (
             hasSubtitles: videoData.hasSubtitles,
             publishedAt: videoData.publishedAt,
             hits: 0,
-            commentsSummary: clamp(videoData.commentsSummary || '', 1000),
-            commentsKeyPoints: videoData.commentsKeyPoints || [],
+            commentsSummary: clamp(structured.commentsSummary || '', 1000),
+            commentsKeyPoints: structured.commentsKeyPoints || [],
             commentsCount: videoData.commentsCount || 0,
         };
 
-        const step5Start = Date.now();
+        const step6DbStart = Date.now();
         const existing = await databases.listDocuments<SummaryData>('main', 'summaries', [
             Query.equal('videoId', videoId),
             Query.limit(1),
@@ -567,10 +741,38 @@ export const generateVideoSummaryStream = async (
         } else {
             finalSummaryData = await databases.createDocument<SummaryData>('main', 'summaries', ID.unique(), summaryData);
         }
-        console.log(`[video-summary-stream] step5 saveToDB ${Date.now() - step5Start}ms`);
+        const step6Time = Date.now() - step6Start;
+        const step6DbTime = Date.now() - step6DbStart;
+        console.log(`📊 Video ${videoId} - Step 6 (Save to database): ${step6Time}ms`, {
+            dbOperationTime: step6DbTime,
+            operation: existing.total > 0 ? 'update' : 'create',
+            summaryDataSize: JSON.stringify(summaryData).length
+        });
 
         const totalTime = Date.now() - startTime;
-        console.log(`✅ Stream pipeline done for ${videoId} in ${totalTime}ms`);
+        console.log(`🎉 Unified summary pipeline completed for ${videoId} in ${totalTime}ms`, {
+            breakdown: {
+                step1_getVideoData: step1Time,
+                step2_channelCheck: step2Time,
+                step3_prepareComments: step3Time,
+                step4_unifiedAI: step4Time,
+                step5_saveTranscript: step5Time,
+                step6_saveToDB: step6Time,
+                total: totalTime
+            },
+            llmTiming: {
+                requestToFirstToken: llmFirstResponseTime,
+                totalGenerationTime: step4Time,
+                tokensPerSecond: llmFirstResponseTime > 0 ? Math.round(1000 / llmFirstResponseTime * 100) / 100 : 0
+            },
+            performance: {
+                hasComments: (videoData.comments?.length || 0) > 0,
+                commentsCount: videoData.commentsCount || 0,
+                transcriptLength: videoData.transcript.length,
+                summaryLength: structured.summary.length,
+                commentsSummaryLength: structured.commentsSummary?.length || 0
+            }
+        });
         return { success: true, summaryData: finalSummaryData };
     } catch (error) {
         if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {

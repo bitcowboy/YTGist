@@ -8,6 +8,16 @@ export interface AppwriteDocument {
     $sequence: number;
 }
 
+// Import Comment interface from comments.ts
+export interface Comment {
+    id: string;
+    text: string;
+    author: string;
+    likeCount: number;
+    publishedAt: string;
+    replyCount?: number;
+}
+
 // 字幕（数据库：transcripts）
 export interface Transcript extends AppwriteDocument {
     videoId: string;
@@ -22,8 +32,7 @@ export interface VideoMeta {
     hasSubtitles: boolean;
     transcript: string;
     publishedAt?: string; // ISO 8601 date string
-    commentsSummary?: string;
-    commentsKeyPoints?: string[];
+    comments?: Comment[]; // 新增：原始评论数据
     commentsCount?: number;
 }
 

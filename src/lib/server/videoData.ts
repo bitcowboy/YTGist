@@ -1,30 +1,81 @@
 import { YOUTUBE_DATA_API_KEY } from "$env/static/private";
-import type { VideoMeta } from "$lib/types";
+import type { VideoMeta, Comment } from "$lib/types";
 import { getTranscript } from "$lib/server/transcript";
 import { getComments } from "$lib/server/comments";
-import { generateCommentsSummary } from "$lib/server/comments-summary";
 
 const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> => {
-	const response = await fetch(
-		`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${YOUTUBE_DATA_API_KEY}`
-	);
+	const startTime = Date.now();
+	console.log(`[videoData] Starting parallel fetch for video ${videoId}`);
+	
+	// Parallel fetch: video info, transcript, and comments
+	const [videoInfoResult, transcriptResult, commentsResult] = await Promise.allSettled([
+		// 1. Get video basic info
+		(async () => {
+			const stepStart = Date.now();
+			try {
+				const response = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${YOUTUBE_DATA_API_KEY}`);
+				if (!response.ok) {
+					throw new Error(`YouTube API error: ${response.status}`);
+				}
+				const data = await response.json();
+				if (!data.items || data.items.length === 0) {
+					throw new Error('Video not found');
+				}
+				const elapsed = Date.now() - stepStart;
+				console.log(`[videoData] ✅ Video basic info fetched in ${elapsed}ms`);
+				return data.items[0];
+			} catch (error) {
+				const elapsed = Date.now() - stepStart;
+				console.log(`[videoData] ❌ Video basic info failed in ${elapsed}ms:`, error);
+				throw error;
+			}
+		})(),
+		
+		// 2. Get transcript
+		(async () => {
+			const stepStart = Date.now();
+			try {
+				const transcript = await getTranscript(videoId);
+				const elapsed = Date.now() - stepStart;
+				console.log(`[videoData] ✅ Transcript fetched in ${elapsed}ms`);
+				return transcript;
+			} catch (error) {
+				const elapsed = Date.now() - stepStart;
+				if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
+					console.log(`[videoData] ⚠️ Video ${videoId} has no subtitles (${elapsed}ms)`);
+					return { transcript: '', hasSubtitles: false };
+				}
+				console.log(`[videoData] ❌ Transcript failed in ${elapsed}ms:`, error);
+				throw error;
+			}
+		})(),
+		
+		// 3. Get comments
+		(async () => {
+			const stepStart = Date.now();
+			try {
+				const comments = await getComments(videoId, 50);
+				const elapsed = Date.now() - stepStart;
+				console.log(`[videoData] ✅ Comments fetched in ${elapsed}ms (${comments.totalCount} total)`);
+				return comments;
+			} catch (error) {
+				const elapsed = Date.now() - stepStart;
+				console.log(`[videoData] ❌ Comments failed in ${elapsed}ms:`, error);
+				return { comments: [], totalCount: 0 };
+			}
+		})()
+	]);
 
-	if (!response.ok) {
-		throw new Error(`YouTube API error: ${response.status}`);
+	// Handle video info result
+	if (videoInfoResult.status === 'rejected') {
+		throw videoInfoResult.reason;
 	}
-
-	const data = await response.json();
-
-	if (!data.items || data.items.length === 0) {
-		throw new Error('Video not found');
-	}
-
-	const video = data.items[0];
+	const video = videoInfoResult.value;
 	const title = video.snippet.title;
 	const description = video.snippet.description;
 	const author = video.snippet.channelTitle;
 	const channelId = video.snippet.channelId;
-	let publishedAt = video.snippet.publishedAt; // ISO 8601 format from YouTube API
+	let publishedAt = video.snippet.publishedAt;
 	
 	console.log(`[YouTube Data API] Video ${videoId}:`, {
 		title,
@@ -44,38 +95,34 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
 		}
 	}
 
-    let transcript = '';
-    let hasSubtitles = false;
-    
-    try {
-        transcript = await getTranscript(videoId);
-        hasSubtitles = true;
-    } catch (error) {
-        if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-            console.info(`Video ${videoId} has no subtitles`);
-            hasSubtitles = false;
-        } else {
-            throw error;
-        }
-    }
+	// Handle transcript result
+	let transcript = '';
+	let hasSubtitles = false;
+	if (transcriptResult.status === 'fulfilled') {
+		if (typeof transcriptResult.value === 'string') {
+			transcript = transcriptResult.value;
+			hasSubtitles = true;
+		} else {
+			transcript = transcriptResult.value.transcript;
+			hasSubtitles = transcriptResult.value.hasSubtitles;
+		}
+	} else {
+		console.warn('Transcript fetch failed:', transcriptResult.reason);
+	}
 
-    // 获取评论并生成评论总结
-    let commentsSummary = '';
-    let commentsKeyPoints: string[] = [];
-    let commentsCount = 0;
-    
-    try {
-        const commentsData = await getComments(videoId, 50);
-        commentsCount = commentsData.totalCount;
-        
-        if (commentsData.comments.length > 0) {
-            const commentsSummaryData = await generateCommentsSummary(commentsData.comments, title);
-            commentsSummary = commentsSummaryData.commentsSummary;
-            commentsKeyPoints = commentsSummaryData.commentsKeyPoints;
-        }
-    } catch (error) {
-        console.warn('Failed to get comments summary:', error);
-    }
+	// Handle comments result
+	let comments: Comment[] = [];
+	let commentsCount = 0;
+	
+	if (commentsResult.status === 'fulfilled') {
+		const commentsData = commentsResult.value;
+		comments = commentsData.comments;
+		commentsCount = commentsData.totalCount;
+		console.log(`[videoData] ✅ Comments data prepared for unified summary (${comments.length} comments)`);
+	}
+
+	const totalElapsed = Date.now() - startTime;
+	console.log(`[videoData] 🎉 All data fetched for video ${videoId} in ${totalElapsed}ms`);
 
     return { 
         title, 
@@ -85,8 +132,7 @@ const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> =
         transcript,
         hasSubtitles,
         publishedAt,
-        commentsSummary,
-        commentsKeyPoints,
+        comments,
         commentsCount
     };
 };

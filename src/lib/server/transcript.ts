@@ -6,62 +6,57 @@ import { Innertube, Platform, UniversalCache } from 'youtubei.js';
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new ProxyAgent(PROXY_URI) : null;
 
+// Helper function to add timeout to promises
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+        )
+    ]);
+};
+
 export const getTranscript = async (videoId: string) => {
     // If FREE_TRANSCRIPT_ENDPOINT is not available, go straight to methodTwo
     if (!FREE_TRANSCRIPT_ENDPOINT) {
         console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodTwo');
         try {
-            return await methodTwo(videoId);
+            return await withTimeout(
+                methodTwo(videoId), 
+                15000, 
+                'Transcript fetch timeout after 15 seconds'
+            );
         } catch (error) {
             // Avoid noisy stack traces for known no-subtitles cases
             if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                // downgrade log level to debug/info
                 console.info('Transcript not available (no subtitles).');
                 throw error;
             }
-            console.warn('methodTwo failed (non-NO_SUBTITLES error):', error);
-            throw new Error('Failed to get transcript: FREE_TRANSCRIPT_ENDPOINT not configured and methodTwo failed');
+            console.warn('methodTwo failed:', error);
+            throw new Error('Failed to get transcript: methodTwo failed');
         }
     }
 
-    // FREE_TRANSCRIPT_ENDPOINT is available, try methodOne with multiple languages
-    const languages = ['zh', 'en', 'auto']; // Try Chinese first, then English, then auto-detect
-    
-    for (const lang of languages) {
-        try {
-            console.log(`Trying methodOne with language: ${lang}`);
-            // Try methodOne without proxy first
-            return await methodOne(videoId, false, lang);
-        } catch (error) {
-            // If it's a no subtitles error, try next language
-            if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                console.log(`No subtitles found for language: ${lang}, trying next...`);
-                continue;
-            }
-            
-            console.warn(`methodOne without proxy failed for language ${lang}:`, error);
-        }
-
-        // Only try with proxy if PROXY_URI is available
-        if (proxyAgent) {
-            try {
-                console.log(`Trying methodOne with proxy for language: ${lang}`);
-                return await methodOne(videoId, true, lang);
-            } catch (error) {
-                // If it's a no subtitles error, try next language
-                if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-                    console.log(`No subtitles found for language ${lang} with proxy, trying next...`);
-                    continue;
-                }
-                console.warn(`methodOne with proxy failed for language ${lang}:`, error);
-            }
-        }
-    }
-
-    // Try methodTwo as last resort
+    // If FREE_TRANSCRIPT_ENDPOINT is available, try methodOne first with timeout
     try {
-        console.log('All methodOne attempts failed, trying methodTwo...');
-        return await methodTwo(videoId);
+        console.log('Trying methodOne with timeout...');
+        return await withTimeout(
+            methodOne(videoId, false, 'auto'), 
+            10000, 
+            'MethodOne timeout after 10 seconds'
+        );
+    } catch (error) {
+        console.warn('methodOne failed, falling back to methodTwo:', error);
+    }
+
+    // Fallback to methodTwo with timeout
+    try {
+        console.log('Using methodTwo as fallback...');
+        return await withTimeout(
+            methodTwo(videoId), 
+            15000, 
+            'Transcript fetch timeout after 15 seconds'
+        );
     } catch (error) {
         // If it's a no subtitles error, preserve it with low-noise log
         if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {

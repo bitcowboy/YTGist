@@ -7,6 +7,7 @@
 	import KeyTakeaway from '$lib/components/summary/key-takeway.svelte';
 	import Divider from '$lib/components/shared/divider.svelte';
 	import KeyPoints from '$lib/components/summary/key-points.svelte';
+	import CoreTerms from '$lib/components/summary/tags.svelte';
 	import Summary from '$lib/components/summary/summary.svelte';
 	import VideoInfo from '$lib/components/summary/video-info.svelte';
 	import Skeletons from '$lib/components/summary/skeletons.svelte';
@@ -34,8 +35,11 @@ import { openSummaryStream } from '$lib/client/summary-stream';
     let partialKeyTakeaway = $state<string>('');
     let partialKeyPoints = $state<string[]>([]);
     let partialCoreTerms = $state<string[]>([]);
+    let partialCommentsSummary = $state<string>('');
+    let partialCommentsKeyPoints = $state<string[]>([]);
     let kpExpectNew = $state<boolean>(false);
     let ctExpectNew = $state<boolean>(false);
+    let ckpExpectNew = $state<boolean>(false);
     let streamFinalized = $state<boolean>(false);
     let streamController: { close: () => void } | null = null;
 
@@ -118,10 +122,30 @@ onMount(() => {
                         return;
                     }
 
+                    if (field === 'commentsSummary' && typeof partial.commentsSummary === 'string') {
+                        // overwrite, finalization not needed for string logic
+                        partialCommentsSummary = partial.commentsSummary;
+                        return;
+                    }
+
+                    if (field === 'commentsKeyPoints' && Array.isArray(partial.commentsKeyPoints)) {
+                        const text = partial.commentsKeyPoints[0] || '';
+                        if (ckpExpectNew || partialCommentsKeyPoints.length === 0) {
+                            partialCommentsKeyPoints = [...partialCommentsKeyPoints, text];
+                            ckpExpectNew = false;
+                        } else {
+                            partialCommentsKeyPoints = [...partialCommentsKeyPoints.slice(0, -1), text];
+                        }
+                        if (isFinal) ckpExpectNew = true;
+                        return;
+                    }
+
                     // Fallback for old payloads without flags
                     if (partial.keyTakeaway) partialKeyTakeaway = partial.keyTakeaway as string;
                     if (partial.keyPoints && Array.isArray(partial.keyPoints)) partialKeyPoints = [...partialKeyPoints, ...partial.keyPoints as string[]];
                     if (partial.coreTerms && Array.isArray(partial.coreTerms)) partialCoreTerms = [...partialCoreTerms, ...partial.coreTerms as string[]];
+                    if (partial.commentsSummary) partialCommentsSummary = partial.commentsSummary as string;
+                    if (partial.commentsKeyPoints && Array.isArray(partial.commentsKeyPoints)) partialCommentsKeyPoints = [...partialCommentsKeyPoints, ...partial.commentsKeyPoints as string[]];
                 },
                 onFinal: (data) => {
                     streamFinalized = true;
@@ -136,8 +160,11 @@ onMount(() => {
                     partialKeyTakeaway = data.keyTakeaway || '';
                     partialKeyPoints = data.keyPoints || [];
                     partialCoreTerms = data.coreTerms || [];
+                    partialCommentsSummary = data.commentsSummary || '';
+                    partialCommentsKeyPoints = data.commentsKeyPoints || [];
                     kpExpectNew = false;
                     ctExpectNew = false;
+                    ckpExpectNew = false;
                 },
                 onError: async (msg) => {
                     // 与现有错误语义对齐
@@ -376,6 +403,15 @@ onDestroy(() => {
                 <Summary summaryData={{ ...(summaryData || {} as any) }} streamingText={streamingText} />
                 {#if partialKeyPoints.length > 0}
                     <KeyPoints summaryData={{ ...(summaryData || {} as any), keyPoints: partialKeyPoints } as any} />
+                {/if}
+                {#if partialCoreTerms.length > 0}
+                    <CoreTerms summaryData={{ ...(summaryData || {} as any), coreTerms: partialCoreTerms } as any} />
+                {/if}
+                {#if partialCommentsSummary && partialCommentsSummary.trim() !== ''}
+                    <CommentsSummary summaryData={{ ...(summaryData || {} as any) }} streamingCommentsSummary={partialCommentsSummary} />
+                {/if}
+                {#if partialCommentsKeyPoints.length > 0}
+                    <CommentsKeyPoints summaryData={{ ...(summaryData || {} as any) }} streamingCommentsKeyPoints={partialCommentsKeyPoints} />
                 {/if}
             </div>
         </div>

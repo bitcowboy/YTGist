@@ -19,8 +19,16 @@
     size-adjust: 107.89%;
 }
 
+@font-face {
+    font-family: 'KingHwaOldSong';
+    src: url('/font/KingHwaOldSong.ttf') format('truetype');
+    font-display: swap;
+    font-weight: normal;
+    font-style: normal;
+}
+
 @theme {
-    --font-sans: 'Inter', 'Inter Fallback', system-ui, sans-serif;
+    --font-sans: 'KingHwaOldSong', 'Inter', 'Inter Fallback', system-ui, sans-serif;
     --font-mono: 'Space Mono', monospace;
 }
 
