@@ -435,6 +435,7 @@ onDestroy(() => {
 			<!-- <Divider /> -->
 			<KeyPoints {summaryData} />
 			<!-- <Divider /> -->
+			<CoreTerms {summaryData} />
 			<CommentsSummary {summaryData} />
 			<CommentsKeyPoints {summaryData} />
 			<!-- <Divider /> -->
