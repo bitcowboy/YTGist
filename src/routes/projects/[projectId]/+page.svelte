@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import { removeVideoFromProject, deleteProject } from '$lib/client/projects';
-	import { generateProjectSummary, getCachedProjectSummary, type ProjectSummary } from '$lib/client/project-summary';
+	import { removeVideoFromProject, deleteProject, renameProject } from '$lib/client/projects';
+	import { generateProjectSummary, getCachedProjectSummary, openProjectSummaryStream, type ProjectSummary } from '$lib/client/project-summary';
 	import type { Project, ProjectVideo, SummaryData } from '$lib/types';
 	import { marked } from 'marked';
 	import SettingsModal from '$lib/components/projects/settings-modal.svelte';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 
 	const { data }: { data: PageData } = $props();
 
@@ -26,12 +26,22 @@
 	let isSettingsModalOpen = $state(false);
 	let currentCustomPrompt = $state('');
 	let isLoadingPrompt = $state(false);
+	let isRenamingProject = $state(false);
+	let renameInputValue = $state('');
+	let renameError = $state<string | null>(null);
+	let projectName = $state(data.project?.name || '');
+	
+	// Streaming state
+	let streamingText = $state<string>('');
+	let partialSummary = $state<Partial<ProjectSummary>>({});
+	let streamFinalized = $state<boolean>(false);
+	let streamController: { close: () => void } | null = null;
 
 	// Function to delete project
 	async function handleDeleteProject() {
 		if (!data.project || isDeletingProject) return;
 		
-		if (!confirm(`Are you sure you want to delete "${data.project.name}"? This action cannot be undone.`)) {
+		if (!confirm(`Are you sure you want to delete "${projectName}"? This action cannot be undone.`)) {
 			return;
 		}
 
@@ -104,26 +114,98 @@
 		}
 	}
 
-	// Function to generate project summary
+	// Function to generate project summary with streaming
 	async function handleGenerateSummary(forceRegenerate = false) {
 		if (!data.project || isGeneratingSummary) return;
 		
 		isGeneratingSummary = true;
 		summaryError = null;
+		streamingText = '';
+		partialSummary = {};
+		streamFinalized = false;
+		
+		// Close existing stream if any
+		if (streamController) {
+			try {
+				streamController.close();
+			} catch {}
+		}
 		
 		try {
-			const response = await generateProjectSummary(data.project.$id, forceRegenerate);
-			projectSummary = response.summary;
-			cacheStatus = {
-				hasCache: true,
-				isValid: !response.isStale,
-				isStale: response.isStale || false,
-				generatedAt: response.generatedAt
-			};
+			streamController = await openProjectSummaryStream(data.project.$id, forceRegenerate, {
+				onDelta: (delta) => {
+					if (streamFinalized) return;
+					streamingText += delta;
+				},
+				onComplete: (full) => {
+					if (streamFinalized) return;
+					streamingText = full;
+				},
+				onPartial: (partial) => {
+					if (streamFinalized) return;
+					partialSummary = { ...partialSummary, ...partial };
+				},
+				onFinal: (response) => {
+					streamFinalized = true;
+					// Always reset generating state, regardless of response content
+					isGeneratingSummary = false;
+					
+					// IMPORTANT: Save streamingText before clearing it, as body content is accumulated there
+					// Handle both string and object cases (in case onComplete received wrong data)
+					let savedStreamingText = '';
+					if (typeof streamingText === 'string') {
+						savedStreamingText = streamingText;
+					} else if (typeof streamingText === 'object' && streamingText !== null) {
+						// If it's an object, try to extract body field
+						savedStreamingText = (streamingText as any).body || '';
+					}
+					
+					// Prioritize streaming data over response data to ensure we use the latest generated content
+					// IMPORTANT: body content should be accumulated in streamingText via summary-delta events
+					const finalTitle = partialSummary?.title || response?.summary?.title || '';
+					const finalBody = savedStreamingText || partialSummary?.body || response?.summary?.body || '';
+					const finalKeyTakeaway = partialSummary?.keyTakeaway || response?.summary?.keyTakeaway || '';
+					
+					// Always update projectSummary if we have response.summary OR if we have streaming data
+					if (response?.summary) {
+						// Use response.summary as base (has all required AppwriteDocument fields)
+						// But override with streaming data to ensure we use the latest content
+						projectSummary = {
+							...response.summary,
+							// Always update with streaming data if available
+							title: finalTitle || response.summary.title || '',
+							body: finalBody || response.summary.body || '',
+							keyTakeaway: finalKeyTakeaway || response.summary.keyTakeaway || ''
+						};
+						
+						cacheStatus = {
+							hasCache: true,
+							isValid: !response.isStale,
+							isStale: response.isStale || false,
+							generatedAt: response.generatedAt || new Date().toISOString()
+						};
+					} else if (finalTitle || finalBody || finalKeyTakeaway) {
+						// No response.summary, but we have streaming data - update existing
+						if (projectSummary) {
+							if (finalTitle) projectSummary.title = finalTitle;
+							if (finalBody) projectSummary.body = finalBody;
+							if (finalKeyTakeaway) projectSummary.keyTakeaway = finalKeyTakeaway;
+						}
+					}
+					
+					// Clear streaming states to avoid flicker
+					streamingText = '';
+					partialSummary = {};
+				},
+				onError: (error) => {
+					console.error('Streaming error:', error);
+					summaryError = error;
+					isGeneratingSummary = false;
+				}
+			});
 		} catch (error) {
 			console.error('Failed to generate summary:', error);
 			summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
-		} finally {
 			isGeneratingSummary = false;
 		}
 	}
@@ -135,8 +217,20 @@
 		}
 	});
 
+	onDestroy(() => {
+		if (streamController) {
+			try {
+				streamController.close();
+			} catch {}
+			streamController = null;
+		}
+	});
+
 	// Function to parse markdown (synchronous)
-	function parseMarkdown(text: string): string {
+	function parseMarkdown(text: string | undefined | null): string {
+		if (!text || typeof text !== 'string') {
+			return '';
+		}
 		return marked.parse(text, {
 			breaks: true,
 			gfm: true
@@ -177,10 +271,81 @@
 			cacheStatus.isStale = true;
 		}
 	}
+
+	// Function to start renaming
+	function handleStartRename() {
+		if (!data.project) return;
+		isRenamingProject = true;
+		renameInputValue = projectName;
+		renameError = null;
+	}
+
+	// Function to cancel renaming
+	function handleCancelRename() {
+		isRenamingProject = false;
+		renameInputValue = '';
+		renameError = null;
+	}
+
+	// Function to save rename
+	async function handleSaveRename() {
+		if (!data.project || !isRenamingProject) return;
+		
+		const trimmedName = renameInputValue.trim();
+		if (trimmedName.length === 0) {
+			renameError = 'Project name cannot be empty';
+			return;
+		}
+		
+		if (trimmedName.length > 500) {
+			renameError = 'Project name is too long (max 500 characters)';
+			return;
+		}
+		
+		if (trimmedName === projectName) {
+			handleCancelRename();
+			return;
+		}
+		
+		renameError = null;
+		const originalName = projectName;
+		
+		// Optimistically update
+		projectName = trimmedName;
+		
+		try {
+			const updatedProject = await renameProject(data.project.$id, trimmedName);
+			projectName = updatedProject.name;
+			isRenamingProject = false;
+			renameInputValue = '';
+		} catch (error) {
+			// Revert on error
+			projectName = originalName;
+			renameError = error instanceof Error ? error.message : 'Failed to rename project';
+		}
+	}
+
+	// Handle keyboard events for rename input
+	function handleRenameKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			handleSaveRename();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			handleCancelRename();
+		}
+	}
+
+	// Sync projectName when data.project changes
+	$effect(() => {
+		if (data.project) {
+			projectName = data.project.name;
+		}
+	});
 </script>
 
 <svelte:head>
-	<title>{data.project?.name || 'Project'} - YTGist</title>
+	<title>{projectName || 'Project'} - YTGist</title>
 </svelte:head>
 
 <div class="min-h-screen bg-zinc-950">
@@ -215,8 +380,56 @@
 				</div>
 				
 				<div class="flex items-start justify-between">
-					<div>
-						<h1 class="text-3xl font-bold text-zinc-100 mb-2">{data.project.name}</h1>
+					<div class="flex-1">
+						{#if isRenamingProject}
+							<div class="mb-2">
+								<input
+									type="text"
+									bind:value={renameInputValue}
+									onkeydown={handleRenameKeydown}
+									class="text-3xl font-bold bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent w-full max-w-2xl"
+									placeholder="Project name"
+									autofocus
+								/>
+								{#if renameError}
+									<p class="mt-1 text-sm text-red-400">{renameError}</p>
+								{/if}
+								<div class="flex items-center gap-2 mt-2">
+									<button
+										onclick={handleSaveRename}
+										class="flex items-center gap-1 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-purple-700"
+									>
+										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+										</svg>
+										Save
+									</button>
+									<button
+										onclick={handleCancelRename}
+										class="flex items-center gap-1 rounded-lg border border-zinc-600 bg-zinc-800/50 px-3 py-1.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100"
+									>
+										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+										</svg>
+										Cancel
+									</button>
+								</div>
+							</div>
+						{:else}
+							<div class="flex items-center gap-3 mb-2">
+								<h1 class="text-3xl font-bold text-zinc-100">{projectName}</h1>
+								<button
+									onclick={handleStartRename}
+									class="flex items-center gap-1 rounded-lg border border-zinc-600 bg-zinc-800/50 px-2 py-1.5 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+									title="Rename project"
+								>
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+									</svg>
+									Edit
+								</button>
+							</div>
+						{/if}
 						<p class="text-zinc-400">
 							Created on {formatDate(data.project.createdAt)} • {data.videos.length} video{data.videos.length !== 1 ? 's' : ''}
 						</p>
@@ -426,7 +639,7 @@
 									class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{#if isGeneratingSummary}
-										<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<svg class="h-4 w-4 animate-spin [animation-direction:reverse]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 										</svg>
 										Generating...
@@ -470,7 +683,7 @@
 									class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{#if isGeneratingSummary}
-										<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<svg class="h-4 w-4 animate-spin [animation-direction:reverse]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 										</svg>
 										Generating...
@@ -487,15 +700,51 @@
 					
 					<div class="bg-zinc-900/50 rounded-lg p-6">
 						{#if isGeneratingSummary}
-							<div class="flex items-center justify-center py-16">
-								<div class="text-center">
-									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-									</svg>
-									<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
-									<p class="text-zinc-500">Analyzing all video transcripts...</p>
+							{#if streamingText || partialSummary.title || partialSummary.keyTakeaway || partialSummary.body}
+								<!-- Show streaming content -->
+								<div class="space-y-6">
+									<!-- Title -->
+									{#if partialSummary.title || streamingText}
+										<div class="text-center">
+											<h1 class="text-2xl font-bold text-zinc-100 mb-2">
+												{partialSummary.title || 'Generating...'}
+											</h1>
+										</div>
+									{/if}
+									
+									<!-- Key Takeaway -->
+									{#if partialSummary.keyTakeaway}
+										<div class="rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 p-6 shadow-lg relative overflow-hidden">
+											<div class="absolute top-0 left-1 text-blue-200/10 text-[160px] font-serif leading-none select-none pointer-events-none">
+												"
+											</div>
+											<div class="text-sm text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
+												{@html parseMarkdown(partialSummary.keyTakeaway)}
+											</div>
+										</div>
+									{/if}
+									
+									<!-- Body (streaming text) -->
+									{#if streamingText || partialSummary.body}
+										<div class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-6 transition-all duration-200 hover:bg-zinc-900/70">
+											<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
+												{@html parseMarkdown(partialSummary.body || streamingText)}
+											</div>
+										</div>
+									{/if}
 								</div>
-							</div>
+							{:else}
+								<!-- Loading state -->
+								<div class="flex items-center justify-center py-16">
+									<div class="text-center">
+										<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin [animation-direction:reverse] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+										</svg>
+										<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
+										<p class="text-zinc-500">Analyzing all video transcripts...</p>
+									</div>
+								</div>
+							{/if}
 						{:else if summaryError}
 							<div class="text-center py-16">
 								<svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -689,7 +938,7 @@
 									class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{#if isGeneratingSummary}
-										<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<svg class="h-4 w-4 animate-spin [animation-direction:reverse]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 										</svg>
 										Generating...
@@ -706,7 +955,7 @@
 						{#if isGeneratingSummary}
 							<div class="flex items-center justify-center py-16">
 								<div class="text-center">
-									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin [animation-direction:reverse] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 									</svg>
 									<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>

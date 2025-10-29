@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getProject, deleteProject, getProjectVideos, getSummary } from '$lib/server/database.js';
+import { getProject, deleteProject, getProjectVideos, getSummary, updateProjectName } from '$lib/server/database.js';
 
 export const GET: RequestHandler = async ({ params }) => {
     try {
@@ -47,6 +47,48 @@ export const GET: RequestHandler = async ({ params }) => {
     } catch (err) {
         console.error('Failed to get project:', err);
         return error(500, 'Failed to fetch project');
+    }
+};
+
+export const PUT: RequestHandler = async ({ params, request }) => {
+    try {
+        const { projectId } = params;
+        const { name } = await request.json();
+        
+        if (!projectId) {
+            return error(400, 'Project ID is required');
+        }
+        
+        if (!name || typeof name !== 'string') {
+            return error(400, 'Project name is required');
+        }
+        
+        const trimmedName = name.trim();
+        if (trimmedName.length === 0) {
+            return error(400, 'Project name cannot be empty');
+        }
+        
+        if (trimmedName.length > 500) {
+            return error(400, 'Project name is too long (max 500 characters)');
+        }
+        
+        // Check if project exists
+        const project = await getProject(projectId);
+        if (!project) {
+            return error(404, 'Project not found');
+        }
+        
+        // Update project name
+        const updatedProject = await updateProjectName(projectId, trimmedName);
+        
+        return json({
+            success: true,
+            project: updatedProject,
+            message: 'Project renamed successfully'
+        });
+    } catch (err) {
+        console.error('Failed to rename project:', err);
+        return error(500, 'Failed to rename project');
     }
 };
 

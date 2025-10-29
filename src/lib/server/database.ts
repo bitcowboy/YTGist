@@ -838,7 +838,6 @@ export const getProjectSummary = async (projectId: string): Promise<ProjectSumma
 export const createProjectSummary = async (summaryData: {
     projectId: string;
     title: string;
-    abstract: string;
     body: string;
     keyTakeaway: string;
     videoIds: string;
@@ -847,7 +846,6 @@ export const createProjectSummary = async (summaryData: {
     const payload = {
         projectId: summaryData.projectId,
         title: (summaryData.title || '').slice(0, 500),
-        abstract: (summaryData.abstract || '').slice(0, 5000),
         body: (summaryData.body || '').slice(0, 20000),
         keyTakeaway: (summaryData.keyTakeaway || '').slice(0, 2000),
         videoIds: (summaryData.videoIds || '').slice(0, 5000),
@@ -865,7 +863,6 @@ export const createProjectSummary = async (summaryData: {
 
 export const updateProjectSummary = async (projectId: string, updateData: Partial<{
     title: string;
-    abstract: string;
     body: string;
     keyTakeaway: string;
     videoIds: string;
@@ -878,7 +875,6 @@ export const updateProjectSummary = async (projectId: string, updateData: Partia
     
     const payload: any = {};
     if (updateData.title !== undefined) payload.title = (updateData.title || '').slice(0, 500);
-    if (updateData.abstract !== undefined) payload.abstract = (updateData.abstract || '').slice(0, 5000);
     if (updateData.body !== undefined) payload.body = (updateData.body || '').slice(0, 20000);
     if (updateData.keyTakeaway !== undefined) payload.keyTakeaway = (updateData.keyTakeaway || '').slice(0, 2000);
     if (updateData.videoIds !== undefined) payload.videoIds = (updateData.videoIds || '').slice(0, 5000);
@@ -971,6 +967,23 @@ export const updateProjectCustomPrompt = async (projectId: string, customPrompt:
         );
     } catch (error) {
         console.error('Failed to update project custom prompt:', error);
+        throw error;
+    }
+};
+
+export const updateProjectName = async (projectId: string, name: string): Promise<Project> => {
+    try {
+        const trimmed = (name || '').trim().slice(0, 500);
+        return await databases.updateDocument<Project>(
+            'main',
+            COLLECTIONS.PROJECTS,
+            projectId,
+            {
+                name: trimmed
+            }
+        );
+    } catch (error) {
+        console.error('Failed to update project name:', error);
         throw error;
     }
 };

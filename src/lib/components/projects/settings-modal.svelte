@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import XIcon from '@lucide/svelte/icons/x';
 	import SaveIcon from '@lucide/svelte/icons/save';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 
 	const dispatch = createEventDispatcher();
 
@@ -15,10 +16,18 @@
 	let customPrompt = $state(initialPrompt);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
+	let isDeleting = $state(false);
+	let hasCustomPrompt = $state(initialPrompt.trim().length > 0);
 
 	// Update local state when initialPrompt changes
 	$effect(() => {
 		customPrompt = initialPrompt;
+		hasCustomPrompt = initialPrompt.trim().length > 0;
+	});
+
+	// Update hasCustomPrompt when customPrompt changes
+	$effect(() => {
+		hasCustomPrompt = customPrompt.trim().length > 0;
 	});
 
 	// Handle escape key
@@ -36,17 +45,12 @@
 	}
 
 	function handleClose() {
-		if (!isLoading) {
+		if (!isLoading && !isDeleting) {
 			dispatch('close');
 		}
 	}
 
 	async function handleSave() {
-		if (!customPrompt.trim()) {
-			error = 'Custom prompt cannot be empty';
-			return;
-		}
-
 		if (customPrompt.length > 10000) {
 			error = 'Custom prompt is too long (max 10000 characters)';
 			return;
@@ -77,6 +81,41 @@
 			error = err instanceof Error ? err.message : 'Failed to save custom prompt';
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	async function handleDelete() {
+		if (!hasCustomPrompt || isDeleting || isLoading) return;
+		
+		if (!confirm('Are you sure you want to delete the custom prompt? This will reset it to the default prompt.')) {
+			return;
+		}
+
+		isDeleting = true;
+		error = null;
+
+		try {
+			const response = await fetch(`/api/projects/${projectId}/settings`, {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					customPrompt: ''
+				})
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(errorData.error || 'Failed to delete custom prompt');
+			}
+
+			dispatch('save', { customPrompt: '' });
+			dispatch('close');
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to delete custom prompt';
+		} finally {
+			isDeleting = false;
 		}
 	}
 
@@ -120,11 +159,28 @@
 			<div class="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
 				<div class="space-y-4">
 					<div>
-						<label for="custom-prompt" class="block text-sm font-medium text-zinc-200 mb-2">
-							Custom AI Prompt
-						</label>
+						<div class="flex items-center justify-between mb-2">
+							<label for="custom-prompt" class="block text-sm font-medium text-zinc-200">
+								Custom AI Prompt
+							</label>
+							{#if hasCustomPrompt}
+								<button
+									onclick={handleDelete}
+									disabled={isLoading || isDeleting}
+									class="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+									title="Delete custom prompt and reset to default"
+								>
+									<TrashIcon class="h-3 w-3" />
+									Delete
+								</button>
+							{/if}
+						</div>
 						<p class="text-sm text-zinc-400 mb-4">
 							Customize the AI prompt used for generating project summaries. This will affect how the AI analyzes and summarizes your video content.
+							{#if !hasCustomPrompt}
+								<br />
+								<span class="text-zinc-500 italic">Currently using default prompt.</span>
+							{/if}
 						</p>
 						<textarea
 							id="custom-prompt"
@@ -147,29 +203,50 @@
 			</div>
 
 			<!-- Footer -->
-			<div class="flex items-center justify-end gap-3 p-6 border-t border-zinc-700">
-				<button
-					onclick={handleClose}
-					disabled={isLoading}
-					class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					Cancel
-				</button>
-				<button
-					onclick={handleSave}
-					disabled={isLoading || !customPrompt.trim()}
-					class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					{#if isLoading}
-						<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-						</svg>
-						Saving...
-					{:else}
-						<SaveIcon class="h-4 w-4" />
-						Save
-					{/if}
-				</button>
+			<div class="flex items-center justify-between p-6 border-t border-zinc-700">
+				{#if hasCustomPrompt}
+					<button
+						onclick={handleDelete}
+						disabled={isLoading || isDeleting}
+						class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if isDeleting}
+							<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							</svg>
+							Deleting...
+						{:else}
+							<TrashIcon class="h-4 w-4" />
+							Delete Custom Prompt
+						{/if}
+					</button>
+				{:else}
+					<div></div>
+				{/if}
+				<div class="flex items-center gap-3">
+					<button
+						onclick={handleClose}
+						disabled={isLoading || isDeleting}
+						class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						Cancel
+					</button>
+					<button
+						onclick={handleSave}
+						disabled={isLoading || isDeleting || customPrompt.length > 10000}
+						class="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						{#if isLoading}
+							<svg class="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							</svg>
+							Saving...
+						{:else}
+							<SaveIcon class="h-4 w-4" />
+							Save
+						{/if}
+					</button>
+				</div>
 			</div>
 		</div>
 	</div>

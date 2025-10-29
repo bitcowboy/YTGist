@@ -94,6 +94,30 @@ export const deleteProject = async (projectId: string): Promise<void> => {
     }
 };
 
+// Rename a project
+export const renameProject = async (projectId: string, name: string): Promise<Project> => {
+    try {
+        const response = await fetch(`/api/projects/${projectId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name }),
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || 'Failed to rename project');
+        }
+        
+        const data = await response.json();
+        return data.project;
+    } catch (error) {
+        console.error('Error renaming project:', error);
+        throw error;
+    }
+};
+
 // Add video to project
 export const addVideoToProject = async (projectId: string, videoId: string): Promise<void> => {
     try {

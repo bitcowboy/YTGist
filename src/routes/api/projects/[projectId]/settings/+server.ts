@@ -39,15 +39,14 @@ export const PUT: RequestHandler = async ({ params, request }) => {
             return error(400, 'Project ID is required');
         }
         
-        if (!customPrompt || typeof customPrompt !== 'string') {
+        if (customPrompt === undefined || customPrompt === null || typeof customPrompt !== 'string') {
             return error(400, 'Custom prompt is required');
         }
         
-        if (customPrompt.trim().length === 0) {
-            return error(400, 'Custom prompt cannot be empty');
-        }
+        // Allow empty string to reset/delete custom prompt
+        const trimmedPrompt = customPrompt.trim();
         
-        if (customPrompt.length > 10000) {
+        if (trimmedPrompt.length > 10000) {
             return error(400, 'Custom prompt is too long (max 10000 characters)');
         }
         
@@ -57,12 +56,14 @@ export const PUT: RequestHandler = async ({ params, request }) => {
             return error(404, 'Project not found');
         }
         
-        // Update project with custom prompt
-        await updateProjectCustomPrompt(projectId, customPrompt.trim());
+        // Update project with custom prompt (empty string means reset to default)
+        await updateProjectCustomPrompt(projectId, trimmedPrompt);
         
         return json({
             success: true,
-            message: 'Custom prompt saved successfully'
+            message: trimmedPrompt.length === 0 
+                ? 'Custom prompt reset to default successfully' 
+                : 'Custom prompt saved successfully'
         });
         
     } catch (err) {

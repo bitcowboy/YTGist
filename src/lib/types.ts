@@ -116,7 +116,6 @@ export interface ProjectVideo extends AppwriteDocument {
 export interface ProjectSummary extends AppwriteDocument {
 	projectId: string;
 	title: string;
-	abstract: string;
 	body: string;
 	keyTakeaway: string; // 添加 keyTakeaway 字段
 	videoIds: string; // comma-separated list of video IDs
