@@ -389,7 +389,6 @@
 									onkeydown={handleRenameKeydown}
 									class="text-3xl font-bold bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent w-full max-w-2xl"
 									placeholder="Project name"
-									autofocus
 								/>
 								{#if renameError}
 									<p class="mt-1 text-sm text-red-400">{renameError}</p>
