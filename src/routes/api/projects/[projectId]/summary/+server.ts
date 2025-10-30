@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { getProject, getProjectVideos, getTranscriptByVideoId, getProjectSummary, createProjectSummary, updateProjectSummary, checkSummaryCacheValidity, getProjectCustomPrompt } from '$lib/server/database.js';
+import { getProject, getProjectVideos, getTranscriptByVideoId, getProjectSummary, createProjectSummary, updateProjectSummary, checkSummaryCacheValidity, getProjectCustomPrompt, getSummary } from '$lib/server/database.js';
 import type { ProjectSummary } from '$lib/types.js';
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
@@ -155,15 +155,19 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			}
 		}
 		
-		// Fetch transcripts for all videos
+		// Fetch transcripts and video metadata for all videos
 		const videoData = [];
 		for (const projectVideo of projectVideos) {
 			try {
 				const transcript = await getTranscriptByVideoId(projectVideo.videoId);
 				if (transcript && transcript.trim() !== '') {
+					// Get video metadata from summaries table
+					const summary = await getSummary(projectVideo.videoId);
+					
 					videoData.push({
 						videoId: projectVideo.videoId,
-						title: `Video ${projectVideo.videoId}`,
+						title: summary?.title || `Video ${projectVideo.videoId}`,
+						author: summary?.author || 'Unknown',
 						transcript: transcript
 					});
 				}
@@ -180,10 +184,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		// Prepare data for AI analysis
 		const documentsData = videoData.map(video => ({
 			title: video.title,
+			author: video.author,
 			videoId: video.videoId,
 			content: video.transcript
 		}));
-		
+
 		// Get custom prompt or use default
 		const systemPrompt = await getProjectCustomPrompt(projectId, multiDocumentAnalysisSystemPrompt);
 
@@ -226,7 +231,7 @@ Important:
 - The "keyTakeaway" field should contain the most important insights separately.
 - All fields are required and must be strings. The body should be formatted using markdown syntax.
 
-Documents:
+Documents(in JSON format):
 ${JSON.stringify(documentsData, null, 2)}
 `;
 		

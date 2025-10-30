@@ -718,7 +718,7 @@
 											<div class="absolute top-0 left-1 text-blue-200/10 text-[160px] font-serif leading-none select-none pointer-events-none">
 												"
 											</div>
-											<div class="text-sm text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
+											<div class="text-base text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
 												{@html parseMarkdown(partialSummary.keyTakeaway)}
 											</div>
 										</div>
@@ -727,7 +727,7 @@
 									<!-- Body (streaming text) -->
 									{#if streamingText || partialSummary.body}
 										<div class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-6 transition-all duration-200 hover:bg-zinc-900/70">
-											<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
+											<div class="text-base text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
 												{@html parseMarkdown(partialSummary.body || streamingText)}
 											</div>
 										</div>
@@ -772,14 +772,14 @@
 									<div class="absolute top-0 left-1 text-blue-200/10 text-[160px] font-serif leading-none select-none pointer-events-none">
 										"
 									</div>
-									<div class="text-sm text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
+									<div class="text-base text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
 										{@html parseMarkdown(projectSummary.keyTakeaway)}
 									</div>
 								</div>
 								
 								<!-- Body -->
 								<div class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-6 transition-all duration-200 hover:bg-zinc-900/70">
-									<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
+									<div class="text-base text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
 										{@html parseMarkdown(projectSummary.body)}
 									</div>
 								</div>

@@ -109,7 +109,6 @@ export const POST: RequestHandler = async () => {
                 attributes: [
                     { name: 'projectId', type: 'string', size: 255, required: true },
                     { name: 'title', type: 'string', size: 500, required: true },
-                    { name: 'abstract', type: 'string', size: 5000, required: true },
                     { name: 'body', type: 'string', size: 20000, required: true },
                     { name: 'keyTakeaway', type: 'string', size: 2000, required: true },
                     { name: 'videoIds', type: 'string', size: 5000, required: true },

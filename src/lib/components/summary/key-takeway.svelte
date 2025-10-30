@@ -25,7 +25,7 @@
 		<div class="absolute top-0 left-1 text-blue-200/10 text-[160px] font-serif leading-none select-none pointer-events-none">
 			”
 		</div>
-		<blockquote class="text-sm text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
+		<blockquote class="text-base text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3">
 			{@html keyTakeawayHtml}
 		</blockquote>
 	</div>
