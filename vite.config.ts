@@ -12,6 +12,7 @@ const localSsl = basicSsl({
 let https = {};
 
 export default defineConfig({	
+	publicDir: 'static',
 	server: {
 		https,
 	},
@@ -24,7 +25,6 @@ export default defineConfig({
 			devOptions: { enabled: true },
 			workbox: {
 				globPatterns: ['**/*.{js,css,html,ico,png,svg,ttf,woff,woff2}'],
-				globIgnores: ['**/font/KingHwaOldSong.ttf']
 			},
 			manifest: false
 		}),
