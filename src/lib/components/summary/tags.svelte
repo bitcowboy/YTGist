@@ -59,7 +59,7 @@
 		>
 			{#each summaryData.coreTerms as term}
 				<span
-					class="inline-flex flex-shrink-0 items-center rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-200 backdrop-blur-sm"
+					class="inline-flex flex-shrink-0 items-center rounded-full border border-purple-500/20 bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-200 backdrop-blur-sm font-serif"
 				>
 					{term}
 				</span>

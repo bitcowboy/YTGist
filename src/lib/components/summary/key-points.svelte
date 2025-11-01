@@ -32,7 +32,7 @@
 						/>
 					</div>
 					<div
-						class="translate-y-1 p-1 text-sm leading-relaxed text-zinc-300 [&>p>strong]:font-medium [&>p>strong]:text-zinc-100"
+						class="translate-y-1 p-1 text-sm leading-relaxed text-zinc-300 [&>p>strong]:font-medium [&>p>strong]:text-zinc-100 font-serif"
 					>
 						{@html point}
 					</div>

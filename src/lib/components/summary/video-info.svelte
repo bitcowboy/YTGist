@@ -80,7 +80,7 @@
 		</div>
 
 		<div class="space-y-6">
-			<h1 class="text-3xl tracking-tight text-balance text-zinc-100 drop-shadow-lg sm:text-4xl">
+			<h1 class="text-3xl tracking-tight text-balance text-zinc-100 drop-shadow-lg sm:text-4xl font-serif">
 				{summaryData.title}
 			</h1>
 

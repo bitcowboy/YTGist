@@ -28,7 +28,8 @@
 }
 
 @theme {
-    --font-sans: 'KingHwaOldSong', 'Inter', 'Inter Fallback', system-ui, sans-serif;
+    --font-sans: 'Inter', 'Inter Fallback', system-ui, sans-serif;
+    --font-serif: 'KingHwaOldSong', 'Georgia', 'Times New Roman', serif;
     --font-mono: 'Space Mono', monospace;
 }
 

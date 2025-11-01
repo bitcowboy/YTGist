@@ -33,7 +33,7 @@
 						<div class="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-xs font-medium text-blue-400">
 							{index + 1}
 						</div>
-						<div class="text-sm text-zinc-300 leading-relaxed prose prose-sm prose-invert prose-zinc max-w-none">
+						<div class="text-sm text-zinc-300 leading-relaxed prose prose-sm prose-invert prose-zinc max-w-none font-serif">
 							{@html parsePointMarkdown(point)}
 						</div>
 					</li>

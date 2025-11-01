@@ -33,7 +33,7 @@
 		</div>
 		
 		<div class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-6 transition-all duration-200 hover:bg-zinc-900/70">
-			<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300">
+			<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300 font-serif">
 				{@html streamingCommentsSummaryHtml || commentsSummaryHtml}
 			</div>
 		</div>
