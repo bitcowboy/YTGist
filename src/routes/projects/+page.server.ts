@@ -38,7 +38,7 @@ export const load: PageServerLoad = async () => {
                     videoCount: videosWithDetails.length,
                     summary: projectSummary ? {
                         title: projectSummary.title,
-                        abstract: projectSummary.abstract,
+                        keyTakeaway: projectSummary.keyTakeaway,
                         isStale: projectSummary.isStale
                     } : null
                 };

@@ -685,7 +685,7 @@ export const getProject = async (projectId: string): Promise<Project | null> => 
     }
 };
 
-export const createProject = async (name: string, customPrompt?: string): Promise<Project> => {
+export const createProject = async (name: string): Promise<Project> => {
     try {
         return await databases.createDocument<Project>(
             'main',
@@ -693,8 +693,7 @@ export const createProject = async (name: string, customPrompt?: string): Promis
             ID.unique(),
             {
                 name,
-                createdAt: new Date().toISOString(),
-                customPrompt: customPrompt || ''
+                createdAt: new Date().toISOString()
             }
         );
     } catch (error) {
@@ -955,22 +954,6 @@ export const checkSummaryCacheValidity = async (projectId: string, currentVideoI
     }
 };
 
-export const updateProjectCustomPrompt = async (projectId: string, customPrompt: string): Promise<Project> => {
-    try {
-        return await databases.updateDocument<Project>(
-            'main',
-            COLLECTIONS.PROJECTS,
-            projectId,
-            {
-                customPrompt: customPrompt.slice(0, 10000)
-            }
-        );
-    } catch (error) {
-        console.error('Failed to update project custom prompt:', error);
-        throw error;
-    }
-};
-
 export const updateProjectName = async (projectId: string, name: string): Promise<Project> => {
     try {
         const trimmed = (name || '').trim().slice(0, 500);
@@ -988,15 +971,3 @@ export const updateProjectName = async (projectId: string, name: string): Promis
     }
 };
 
-export const getProjectCustomPrompt = async (projectId: string, defaultPrompt: string): Promise<string> => {
-    try {
-        const project = await getProject(projectId);
-        if (project && project.customPrompt && project.customPrompt.trim()) {
-            return project.customPrompt;
-        }
-        return defaultPrompt;
-    } catch (error) {
-        console.error('Failed to get project custom prompt:', error);
-        return defaultPrompt;
-    }
-};

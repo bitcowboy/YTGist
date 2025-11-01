@@ -84,8 +84,7 @@ export const POST: RequestHandler = async () => {
                 name: 'projects',
                 attributes: [
                     { name: 'name', type: 'string', size: 500, required: true },
-                    { name: 'createdAt', type: 'datetime', required: true },
-                    { name: 'customPrompt', type: 'string', size: 10000, required: false }
+                    { name: 'createdAt', type: 'datetime', required: true }
                 ],
                 indexes: [
                     { key: 'createdAt', type: 'key', attributes: ['createdAt'] }

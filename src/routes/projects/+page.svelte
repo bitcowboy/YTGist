@@ -34,39 +34,34 @@
 					onclick={() => window.open(`/projects/${project.$id}`, '_blank')}
 					class="group w-full rounded-xl border border-zinc-700/50 bg-zinc-900/40 p-6 text-left transition-all hover:border-zinc-600/50 hover:bg-zinc-800/40"
 				>
-					<div class="flex items-center justify-between">
-						<div class="flex-1">
+					<div class="flex-1">
+						<div class="flex items-center justify-between gap-4">
 							<h2 class="text-xl font-semibold text-zinc-100 group-hover:text-purple-400 transition-colors">
 								{project.name}
 							</h2>
-							<p class="mt-1 text-sm text-zinc-400">
-								Created {new Date(project.createdAt).toLocaleDateString()}
-							</p>
-							
-							{#if project.summary}
-								<div class="mt-4 space-y-2">
-									{#if project.summary.title}
-										<h3 class="text-base font-medium text-zinc-200">
-											{project.summary.title}
-										</h3>
-									{/if}
-									{#if project.summary.keyTakeaway}
-										<p class="text-sm text-zinc-400 line-clamp-3">
-											{project.summary.keyTakeaway}
-										</p>
-									{/if}
-									{#if project.summary.isStale}
-										<span class="inline-flex items-center text-xs text-amber-500">
-											⚠️ Summary may be outdated
-										</span>
-									{/if}
-								</div>
-							{/if}
+							<div class="flex items-center gap-2 text-sm text-zinc-400 shrink-0">
+								<span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+								<span class="flex items-center gap-1">
+									<VideoIcon class="h-4 w-4" />
+									<span>{project.videoCount}</span>
+								</span>
+							</div>
 						</div>
-						<div class="flex items-center gap-2 text-sm text-zinc-400">
-							<VideoIcon class="h-4 w-4" />
-							<span>{project.videoCount} {project.videoCount === 1 ? 'video' : 'videos'}</span>
-						</div>
+						
+						{#if project.summary}
+							<div class="mt-4 space-y-2">
+								{#if project.summary.keyTakeaway}
+									<p class="text-sm text-zinc-400 line-clamp-3 font-serif">
+										{project.summary.keyTakeaway}
+									</p>
+								{/if}
+								{#if project.summary.isStale}
+									<span class="inline-flex items-center text-xs text-amber-500">
+										⚠️ Summary may be outdated
+									</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 				</button>
 			{/each}

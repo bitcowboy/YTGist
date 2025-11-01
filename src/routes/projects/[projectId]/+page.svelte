@@ -5,7 +5,6 @@
 	import { generateProjectSummary, getCachedProjectSummary, openProjectSummaryStream, type ProjectSummary } from '$lib/client/project-summary';
 	import type { Project, ProjectVideo, SummaryData } from '$lib/types';
 	import { marked } from 'marked';
-	import SettingsModal from '$lib/components/projects/settings-modal.svelte';
 	import { onMount, onDestroy } from 'svelte';
 
 	const { data }: { data: PageData } = $props();
@@ -14,7 +13,6 @@
 	let isRemovingVideo = $state<string | null>(null);
 	let isGeneratingSummary = $state(false);
 	let projectSummary = $state<ProjectSummary | null>(null);
-	let activeTab = $state<'videos' | 'summary'>('videos');
 	let summaryError = $state<string | null>(null);
 	let cacheStatus = $state<{
 		hasCache: boolean;
@@ -23,13 +21,14 @@
 		generatedAt?: string;
 	} | null>(null);
 	let isVideosListCollapsed = $state(false);
-	let isSettingsModalOpen = $state(false);
-	let currentCustomPrompt = $state('');
-	let isLoadingPrompt = $state(false);
 	let isRenamingProject = $state(false);
 	let renameInputValue = $state('');
 	let renameError = $state<string | null>(null);
 	let projectName = $state(data.project?.name || '');
+	
+	// YouTube players map - stores player instances
+	let youtubePlayers = $state<Map<string, any>>(new Map());
+	let youtubeApiReady = $state(false);
 	
 	// Streaming state
 	let streamingText = $state<string>('');
@@ -79,6 +78,118 @@
 	function goToVideo(videoId: string) {
 		window.open(`https://www.youtube.com/watch?v=${videoId}`, '_blank');
 	}
+
+	// Load YouTube IFrame API
+	function loadYouTubeAPI() {
+		if (typeof window === 'undefined' || youtubeApiReady) return;
+		
+		// Check if API is already loaded
+		if ((window as any).YT && (window as any).YT.Player) {
+			youtubeApiReady = true;
+			return;
+		}
+
+		// Check if script is already being loaded
+		if (document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+			// Wait for API to be ready (max 10 seconds)
+			let attempts = 0;
+			const checkInterval = setInterval(() => {
+				attempts++;
+				if ((window as any).YT && (window as any).YT.Player) {
+					youtubeApiReady = true;
+					clearInterval(checkInterval);
+				} else if (attempts > 100) {
+					// Timeout after 10 seconds
+					clearInterval(checkInterval);
+				}
+			}, 100);
+			return;
+		}
+
+		// Create and load script
+		const tag = document.createElement('script');
+		tag.src = 'https://www.youtube.com/iframe_api';
+		const firstScriptTag = document.getElementsByTagName('script')[0];
+		firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+
+		// Set callback for when API is ready
+		(window as any).onYouTubeIframeAPIReady = () => {
+			youtubeApiReady = true;
+		};
+	}
+
+	// Initialize YouTube player for an iframe
+	function initYouTubePlayer(videoId: string, iframeId: string) {
+		if (!youtubeApiReady) {
+			// Retry after API is ready (max 10 seconds)
+			let attempts = 0;
+			const checkReady = setInterval(() => {
+				attempts++;
+				if (youtubeApiReady && (window as any).YT) {
+					clearInterval(checkReady);
+					initYouTubePlayer(videoId, iframeId);
+				} else if (attempts > 100) {
+					// Timeout after 10 seconds
+					clearInterval(checkReady);
+				}
+			}, 100);
+			return;
+		}
+
+		// Check if iframe exists
+		const iframeElement = document.getElementById(iframeId);
+		if (!iframeElement) {
+			return;
+		}
+
+		// Use iframeId as key for player instance
+		const playerKey = iframeId;
+		
+		// Don't initialize if player already exists for this iframe
+		if (youtubePlayers.has(playerKey)) {
+			return;
+		}
+
+		try {
+			const player = new (window as any).YT.Player(iframeId, {
+				events: {
+					onReady: (event: any) => {
+						// Store player instance only after it's ready
+						const readyPlayer = event.target;
+						youtubePlayers.set(playerKey, readyPlayer);
+					},
+					onStateChange: (event: any) => {
+						// State 1 = playing
+						if (event.data === 1) {
+							// Ensure current player is in the map
+							const currentPlayer = event.target;
+							if (!youtubePlayers.has(playerKey)) {
+								youtubePlayers.set(playerKey, currentPlayer);
+							}
+							
+							// Pause all other players
+							youtubePlayers.forEach((p, key) => {
+								if (key !== playerKey && p) {
+									try {
+										// Check if player is still valid and has pauseVideo method
+										if (p.pauseVideo && typeof p.pauseVideo === 'function') {
+											p.pauseVideo();
+										}
+									} catch (e) {
+										// Player might be destroyed, remove from map
+										youtubePlayers.delete(key);
+									}
+								}
+							});
+						}
+					}
+				}
+			});
+		} catch (error) {
+			console.error('Error initializing YouTube player:', error);
+		}
+	}
+
 
 	// Format date
 	function formatDate(dateString: string) {
@@ -204,8 +315,8 @@
 				}
 			});
 		} catch (error) {
-			console.error('Failed to generate summary:', error);
-			summaryError = error instanceof Error ? error.message : 'Failed to generate summary';
+			console.error('Failed to generate overview:', error);
+			summaryError = error instanceof Error ? error.message : 'Failed to generate overview';
 			isGeneratingSummary = false;
 		}
 	}
@@ -215,6 +326,7 @@
 		if (data.summaryCacheStatus?.hasCache && data.summaryCacheStatus.isValid) {
 			loadCachedSummary();
 		}
+		loadYouTubeAPI();
 	});
 
 	onDestroy(() => {
@@ -224,6 +336,17 @@
 			} catch {}
 			streamController = null;
 		}
+		// Cleanup YouTube players
+		youtubePlayers.forEach((player, key) => {
+			try {
+				if (player && player.destroy && typeof player.destroy === 'function') {
+					player.destroy();
+				}
+			} catch (e) {
+				// Ignore cleanup errors
+			}
+		});
+		youtubePlayers.clear();
 	});
 
 	// Function to parse markdown (synchronous)
@@ -235,41 +358,6 @@
 			breaks: true,
 			gfm: true
 		}) as string;
-	}
-
-	// Function to open settings modal
-	async function handleOpenSettings() {
-		if (!data.project) return;
-		
-		isLoadingPrompt = true;
-		try {
-			const response = await fetch(`/api/projects/${data.project.$id}/settings`);
-			if (response.ok) {
-				const data = await response.json();
-				currentCustomPrompt = data.customPrompt;
-				isSettingsModalOpen = true;
-			} else {
-				console.error('Failed to load custom prompt');
-			}
-		} catch (error) {
-			console.error('Failed to load custom prompt:', error);
-		} finally {
-			isLoadingPrompt = false;
-		}
-	}
-
-	// Function to handle settings modal close
-	function handleSettingsClose() {
-		isSettingsModalOpen = false;
-	}
-
-	// Function to handle settings save
-	function handleSettingsSave(event: CustomEvent) {
-		currentCustomPrompt = event.detail.customPrompt;
-		// Mark summary as stale to trigger regeneration
-		if (cacheStatus) {
-			cacheStatus.isStale = true;
-		}
 	}
 
 	// Function to start renaming
@@ -425,7 +513,6 @@
 									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
 									</svg>
-									Edit
 								</button>
 							</div>
 						{/if}
@@ -436,18 +523,6 @@
 					
 					<div class="flex items-center gap-3">
 						<button
-							onclick={handleOpenSettings}
-							disabled={isLoadingPrompt}
-							class="flex items-center gap-2 rounded-lg border border-zinc-600 bg-zinc-800/50 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-						>
-							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-							</svg>
-							{isLoadingPrompt ? 'Loading...' : 'Settings'}
-						</button>
-						
-						<button
 							onclick={handleDeleteProject}
 							disabled={isDeletingProject}
 							class="flex items-center gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -455,35 +530,17 @@
 							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 							</svg>
-							{isDeletingProject ? 'Deleting...' : 'Delete Project'}
+							{isDeletingProject ? 'Deleting...' : ''}
 						</button>
 					</div>
 				</div>
 			</div>
 
-			<!-- Mobile Tabs (visible on small screens) -->
-			<div class="md:hidden mb-6">
-				<div class="flex border-b border-zinc-800">
-					<button
-						onclick={() => activeTab = 'videos'}
-						class="flex-1 px-4 py-3 text-sm font-medium transition-colors {activeTab === 'videos' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-zinc-400 hover:text-zinc-200'}"
-					>
-						Videos ({data.videos.length})
-					</button>
-					<button
-						onclick={() => activeTab = 'summary'}
-						class="flex-1 px-4 py-3 text-sm font-medium transition-colors {activeTab === 'summary' ? 'text-purple-400 border-b-2 border-purple-400' : 'text-zinc-400 hover:text-zinc-200'}"
-					>
-						AI Summary
-					</button>
-				</div>
-			</div>
-
-			<!-- Desktop Split Layout (hidden on mobile) -->
-			<div class="hidden md:flex gap-6">
+			<!-- Adaptive Split Layout -->
+			<div class="flex flex-col lg:flex-row gap-6">
 				{#if !isVideosListCollapsed}
-					<!-- Left Panel: Videos List (40%) -->
-					<div class="w-2/5">
+					<!-- Left Panel: Videos List -->
+					<div class="w-full lg:w-[30%]">
 						<div class="flex items-center justify-between mb-4">
 							<h2 class="text-xl font-semibold text-zinc-100">Videos ({data.videos.length})</h2>
 							<button
@@ -519,73 +576,61 @@
 							{:else}
 								<div class="space-y-3">
 									{#each data.videos as video, index}
+										{@const iframeId = `yt-player-${video.videoId}-${index}`}
 										<div class="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 transition-colors hover:bg-zinc-800/50">
-											<div class="flex items-start gap-3">
-												<!-- Video Thumbnail -->
-												<div class="flex-shrink-0">
-													<button
-														onclick={() => goToVideo(video.videoId)}
-														class="group relative block overflow-hidden rounded-lg bg-zinc-800"
-													>
-														<img
-															src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
-															alt={video.summary?.title || 'Video thumbnail'}
-															class="h-16 w-28 object-cover transition-transform group-hover:scale-105"
-															loading="lazy"
-														/>
-														
-														<!-- Play overlay -->
-														<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
-															<svg class="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-																<path d="M8 5v14l11-7z" />
-															</svg>
-														</div>
-													</button>
-												</div>
-
-												<!-- Video Info -->
-												<div class="flex-1 min-w-0">
-													<button
-														onclick={() => goToVideo(video.videoId)}
-														class="block w-full text-left"
-													>
-														<h3 class="text-sm font-semibold text-zinc-100 mb-1 line-clamp-2 group-hover:text-purple-400 transition-colors">
+											<div class="space-y-3">
+												<div class="flex items-start justify-between gap-3 mb-2">
+													<div class="flex-1 min-w-0">
+														<button
+															type="button"
+															onclick={() => goToVideo(video.videoId)}
+															class="text-sm font-semibold text-zinc-100 mb-1 line-clamp-2 cursor-pointer hover:text-purple-400 transition-colors text-left w-full bg-transparent border-0 p-0"
+															title="Click to open in YouTube"
+														>
 															{video.summary?.title || `Video ${video.videoId}`}
-														</h3>
-													</button>
-													
-													{#if video.summary}
-														<div class="flex items-center gap-2 text-xs text-zinc-400 mb-1">
-															<span>{video.summary.author}</span>
-															<span>•</span>
-															<span>Added {formatDate(video.addedAt)}</span>
-														</div>
-														
-														{#if video.summary.summary}
-															<p class="text-xs text-zinc-500 line-clamp-2 mb-2">
-																{video.summary.summary}
-															</p>
+														</button>
+														{#if video.summary}
+															<div class="flex items-center gap-2 text-xs text-zinc-400 mb-1">
+																<span>{video.summary.author}</span>
+																<span>•</span>
+																<span>Added {formatDate(video.addedAt)}</span>
+															</div>
 														{/if}
-													{:else}
-														<p class="text-xs text-zinc-500 mb-2">
-															Summary data not available
-														</p>
-													{/if}
+													</div>
+													<div class="flex items-center gap-1">
+														<button
+															onclick={() => handleRemoveVideo(data.project.$id, video.videoId)}
+															disabled={isRemovingVideo === video.videoId}
+															class="flex items-center justify-center rounded border border-zinc-600 bg-transparent p-1.5 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-red-400 hover:border-red-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+															title={isRemovingVideo === video.videoId ? 'Removing...' : 'Remove from project'}
+														>
+															<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+															</svg>
+														</button>
+													</div>
 												</div>
-
-												<!-- Actions -->
-												<div class="flex flex-col gap-1">
-													<button
-														onclick={() => handleRemoveVideo(data.project.$id, video.videoId)}
-														disabled={isRemovingVideo === video.videoId}
-														class="flex items-center justify-center rounded border border-zinc-600 bg-transparent p-1.5 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-red-400 hover:border-red-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-														title={isRemovingVideo === video.videoId ? 'Removing...' : 'Remove from project'}
-													>
-														<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-															<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-														</svg>
-													</button>
+												<div class="relative w-full" style="padding-bottom: 56.25%;">
+													<iframe
+														id={iframeId}
+														src={`https://www.youtube.com/embed/${video.videoId}?enablejsapi=1`}
+														class="absolute top-0 left-0 w-full h-full rounded-lg border-0"
+														allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+														allowfullscreen
+														title={video.summary?.title || `Video ${video.videoId}`}
+														onload={() => {
+															// Initialize player after iframe loads
+															setTimeout(() => {
+																initYouTubePlayer(video.videoId, iframeId);
+															}, 500);
+														}}
+													></iframe>
 												</div>
+												{#if video.summary?.keyTakeaway}
+													<div class="text-xs text-justify font-bold text-zinc-500 line-clamp-2">
+														{@html parseMarkdown(video.summary.keyTakeaway)}
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/each}
@@ -595,12 +640,12 @@
 					</div>
 				{/if}
 
-				<!-- Right Panel: AI Summary (60% when expanded, 100% when collapsed) -->
-				<div class="{isVideosListCollapsed ? 'w-full' : 'w-3/5'}">
+				<!-- Right Panel: AI Summary (70% when expanded, 100% when collapsed) -->
+				<div class="{isVideosListCollapsed ? 'w-full' : 'w-full lg:w-[70%]'}">
 					{#if isVideosListCollapsed}
 						<div class="flex items-center justify-between mb-4">
 							<div class="flex items-center gap-3">
-								<h2 class="text-xl font-semibold text-zinc-100">AI Summary</h2>
+								<h2 class="text-xl font-semibold text-zinc-100">Overview</h2>
 								<button
 									onclick={() => isVideosListCollapsed = !isVideosListCollapsed}
 									class="flex items-center gap-1 rounded-lg border border-zinc-600 bg-transparent px-2 py-1 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100"
@@ -646,7 +691,7 @@
 										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
 										</svg>
-										{projectSummary ? 'Regenerate' : 'Generate Summary'}
+										{projectSummary ? 'Regenerate' : 'Generate Overview'}
 									{/if}
 								</button>
 							</div>
@@ -654,7 +699,7 @@
 					{:else}
 						<div class="flex items-center justify-between mb-4">
 							<div class="flex items-center gap-3">
-								<h2 class="text-xl font-semibold text-zinc-100">AI Summary</h2>
+								<h2 class="text-xl font-semibold text-zinc-100">Overview</h2>
 								{#if cacheStatus?.hasCache}
 									<div class="flex items-center gap-2">
 										{#if cacheStatus.isStale}
@@ -690,7 +735,7 @@
 										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
 										</svg>
-										{projectSummary ? 'Regenerate' : 'Generate Summary'}
+										{projectSummary ? 'Regenerate' : 'Generate Overview'}
 									{/if}
 								</button>
 							</div>
@@ -717,7 +762,7 @@
 											<div class="absolute top-0 left-1 text-blue-200/10 text-[160px] font-serif leading-none select-none pointer-events-none">
 												"
 											</div>
-											<div class="text-base text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-4 pl-5 pr-3 font-serif">
+											<div class="text-base text-justify leading-relaxed text-blue-50 relative z-10 pt-4 pl-5 pr-3 font-serif">
 												{@html parseMarkdown(partialSummary.keyTakeaway)}
 											</div>
 										</div>
@@ -739,7 +784,7 @@
 										<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin [animation-direction:reverse] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 										</svg>
-										<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
+										<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating Overview</h3>
 										<p class="text-zinc-500">Analyzing all video transcripts...</p>
 									</div>
 								</div>
@@ -749,7 +794,7 @@
 								<svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 								</svg>
-								<h3 class="text-lg font-medium text-zinc-300 mb-2">Failed to Generate Summary</h3>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">Failed to Generate Overview</h3>
 								<p class="text-zinc-500 mb-4">{summaryError}</p>
 								<button
 									onclick={() => handleGenerateSummary(false)}
@@ -788,7 +833,7 @@
 								<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
 								</svg>
-								<h3 class="text-lg font-medium text-zinc-300 mb-2">AI Summary</h3>
+								<h3 class="text-lg font-medium text-zinc-300 mb-2">AI Overview</h3>
 								<p class="text-zinc-500 mb-6">Generate a comprehensive analysis of all video transcripts in this project.</p>
 								<button
 									onclick={() => handleGenerateSummary(false)}
@@ -798,229 +843,12 @@
 									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
 									</svg>
-									Generate Summary
+									Generate Overview
 								</button>
 							</div>
 						{/if}
 					</div>
 				</div>
-			</div>
-
-			<!-- Mobile Content (visible on small screens) -->
-			<div class="md:hidden">
-				{#if activeTab === 'videos'}
-					<!-- Mobile Videos List -->
-			{#if data.videos.length === 0}
-				<div class="text-center py-16">
-					<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-					</svg>
-					<h3 class="text-lg font-medium text-zinc-300 mb-2">No videos in this project</h3>
-					<p class="text-zinc-500 mb-6">Add videos to this project from the watch page.</p>
-					<button
-						onclick={() => goto('/')}
-						class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
-					>
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-						</svg>
-						Browse Videos
-					</button>
-				</div>
-			{:else}
-				<div class="grid gap-4">
-					{#each data.videos as video, index}
-						<div class="group rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 transition-colors hover:bg-zinc-800/50">
-							<div class="flex items-start gap-4">
-								<!-- Video Thumbnail -->
-								<div class="flex-shrink-0">
-									<button
-										onclick={() => goToVideo(video.videoId)}
-										class="group relative block overflow-hidden rounded-lg bg-zinc-800"
-									>
-										<img
-											src={`https://img.youtube.com/vi/${video.videoId}/mqdefault.jpg`}
-											alt={video.summary?.title || 'Video thumbnail'}
-											class="h-20 w-36 object-cover transition-transform group-hover:scale-105"
-											loading="lazy"
-										/>
-										
-										<!-- Play overlay -->
-										<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 transition-opacity group-hover:opacity-100">
-											<svg class="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-												<path d="M8 5v14l11-7z" />
-											</svg>
-										</div>
-									</button>
-								</div>
-
-								<!-- Video Info -->
-								<div class="flex-1 min-w-0">
-									<button
-										onclick={() => goToVideo(video.videoId)}
-										class="block w-full text-left"
-									>
-										<h3 class="text-lg font-semibold text-zinc-100 mb-2 line-clamp-2 group-hover:text-purple-400 transition-colors">
-											{video.summary?.title || `Video ${video.videoId}`}
-										</h3>
-									</button>
-									
-									{#if video.summary}
-									<div class="flex items-center gap-4 text-sm text-zinc-400 mb-2">
-										<span>{video.summary.author}</span>
-										<span>•</span>
-										<span>Added {formatDate(video.addedAt)}</span>
-									</div>
-										
-										{#if video.summary.summary}
-											<p class="text-sm text-zinc-500 line-clamp-2 mb-3">
-												{video.summary.summary}
-											</p>
-										{/if}
-									{:else}
-										<p class="text-sm text-zinc-500 mb-3">
-											Summary data not available
-										</p>
-									{/if}
-								</div>
-
-								<!-- Actions -->
-								<div class="flex items-center">
-									<button
-										onclick={() => handleRemoveVideo(data.project.$id, video.videoId)}
-										disabled={isRemovingVideo === video.videoId}
-										class="flex items-center justify-center rounded-lg border border-zinc-600 bg-transparent p-2 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-red-400 hover:border-red-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-										title={isRemovingVideo === video.videoId ? 'Removing...' : 'Remove from project'}
-									>
-										<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-										</svg>
-									</button>
-								</div>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-				{:else if activeTab === 'summary'}
-					<!-- Mobile AI Summary -->
-					<div class="bg-zinc-900/50 rounded-lg p-6">
-						<div class="mb-6">
-							<div class="flex items-center justify-between mb-4">
-								<div class="flex items-center gap-3">
-									<h2 class="text-xl font-semibold text-zinc-100">AI Summary</h2>
-									{#if cacheStatus?.hasCache}
-										<div class="flex items-center gap-2">
-											{#if cacheStatus.isStale}
-												<span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-400">
-													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-													</svg>
-													Cache outdated
-												</span>
-											{:else if cacheStatus.isValid}
-												<span class="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-1 text-xs font-medium text-green-400">
-													<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-													</svg>
-													Cached
-												</span>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							</div>
-							<div class="flex items-center gap-2">
-								<button
-									onclick={() => handleGenerateSummary(projectSummary ? true : false)}
-									disabled={isGeneratingSummary || data.videos.length === 0}
-									class="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									{#if isGeneratingSummary}
-										<svg class="h-4 w-4 animate-spin [animation-direction:reverse]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-										</svg>
-										Generating...
-									{:else}
-										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-										</svg>
-										{projectSummary ? 'Regenerate' : 'Generate Summary'}
-									{/if}
-								</button>
-							</div>
-						</div>
-						
-						{#if isGeneratingSummary}
-							<div class="flex items-center justify-center py-16">
-								<div class="text-center">
-									<svg class="mx-auto h-12 w-12 text-purple-400 animate-spin [animation-direction:reverse] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-									</svg>
-									<h3 class="text-lg font-medium text-zinc-300 mb-2">Generating AI Summary</h3>
-									<p class="text-zinc-500">Analyzing all video transcripts...</p>
-								</div>
-							</div>
-						{:else if summaryError}
-							<div class="text-center py-16">
-								<svg class="mx-auto h-12 w-12 text-red-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-								</svg>
-								<h3 class="text-lg font-medium text-zinc-300 mb-2">Failed to Generate Summary</h3>
-								<p class="text-zinc-500 mb-4">{summaryError}</p>
-								<button
-									onclick={() => handleGenerateSummary(false)}
-									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700"
-								>
-									Try Again
-								</button>
-							</div>
-						{:else if projectSummary}
-							<div class="space-y-6">
-								<!-- Title -->
-								<div class="text-center">
-									<h1 class="text-2xl font-bold text-zinc-100 mb-2 font-serif">{projectSummary.title}</h1>
-								</div>
-								
-								<!-- Key Takeaway (like watch page) -->
-								<div class="rounded-lg border border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 p-4 shadow-lg relative overflow-hidden">
-									<!-- Background quote -->
-									<div class="absolute top-0 left-1 text-blue-200/10 text-[150px] font-serif leading-none select-none pointer-events-none">
-										"
-									</div>
-									<div class="text-sm text-justify leading-relaxed font-light text-blue-50 relative z-10 pt-2 pl-4 pr-2 font-serif">
-										{@html parseMarkdown(projectSummary.keyTakeaway)}
-									</div>
-								</div>
-								
-								<!-- Body -->
-								<div class="rounded-lg border border-zinc-800/50 bg-zinc-900/50 p-4 transition-all duration-200 hover:bg-zinc-900/70">
-									<div class="text-sm text-justify prose prose-lg prose-invert prose-zinc max-w-none leading-relaxed text-zinc-300 font-serif">
-										{@html parseMarkdown(projectSummary.body)}
-									</div>
-								</div>
-							</div>
-						{:else}
-							<div class="text-center py-16">
-								<svg class="mx-auto h-12 w-12 text-zinc-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-								</svg>
-								<h3 class="text-lg font-medium text-zinc-300 mb-2">AI Summary</h3>
-								<p class="text-zinc-500 mb-6">Generate a comprehensive analysis of all video transcripts in this project.</p>
-								<button
-									onclick={() => handleGenerateSummary(false)}
-									disabled={data.videos.length === 0}
-									class="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-									</svg>
-									Generate Summary
-								</button>
-							</div>
-						{/if}
-					</div>
-				{/if}
 			</div>
 		{/if}
 	</div>
@@ -1035,13 +863,4 @@
 		line-clamp: 2;
 	}
 </style>
-
-<!-- Settings Modal -->
-<SettingsModal 
-	bind:isOpen={isSettingsModalOpen}
-	projectId={data.project?.$id || ''}
-	initialPrompt={currentCustomPrompt}
-	on:close={handleSettingsClose}
-	on:save={handleSettingsSave}
-/>
 
