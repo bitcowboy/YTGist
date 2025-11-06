@@ -1,6 +1,6 @@
 import { databases } from './appwrite.js';
 import { ID, Query } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, AppwriteDocument } from '$lib/types.js';
+import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, Collection, CollectionVideo, CollectionSummary, AppwriteDocument } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
@@ -11,7 +11,10 @@ export const COLLECTIONS = {
     FOLLOWED_CHANNELS: 'followed_channels',
     PROJECTS: 'projects',
     PROJECT_VIDEOS: 'project_videos',
-    PROJECT_SUMMARIES: 'project_summaries'
+    PROJECT_SUMMARIES: 'project_summaries',
+    COLLECTIONS: 'collections',
+    COLLECTION_VIDEOS: 'collection_videos',
+    COLLECTION_SUMMARIES: 'collection_summaries'
 } as const;
 
 // Summary 相关操作
@@ -968,6 +971,378 @@ export const updateProjectName = async (projectId: string, name: string): Promis
     } catch (error) {
         console.error('Failed to update project name:', error);
         throw error;
+    }
+};
+
+// Collection 相关操作
+export const getCollections = async (): Promise<Collection[]> => {
+    try {
+        const { documents } = await databases.listDocuments<Collection>(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            [Query.orderDesc('createdAt')]
+        );
+        return documents;
+    } catch (error) {
+        console.error('Failed to get collections:', error);
+        return [];
+    }
+};
+
+export const getCollection = async (collectionId: string): Promise<Collection | null> => {
+    try {
+        const { documents } = await databases.listDocuments<Collection>(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            [Query.equal('$id', collectionId), Query.limit(1)]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get collection:', error);
+        return null;
+    }
+};
+
+export const createCollection = async (name: string, description?: string): Promise<Collection> => {
+    try {
+        const trimmed = (name || '').trim().slice(0, 500);
+        const trimmedDesc = description ? description.trim().slice(0, 2000) : undefined;
+        
+        return await databases.createDocument<Collection>(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            ID.unique(),
+            {
+                name: trimmed,
+                description: trimmedDesc,
+                createdAt: new Date().toISOString()
+            }
+        );
+    } catch (error) {
+        console.error('Failed to create collection:', error);
+        throw error;
+    }
+};
+
+export const updateCollection = async (collectionId: string, name: string, description?: string): Promise<Collection> => {
+    try {
+        const trimmed = (name || '').trim().slice(0, 500);
+        const trimmedDesc = description ? description.trim().slice(0, 2000) : undefined;
+        
+        const updateData: any = { name: trimmed };
+        if (description !== undefined) {
+            updateData.description = trimmedDesc;
+        }
+        
+        return await databases.updateDocument<Collection>(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            collectionId,
+            updateData
+        );
+    } catch (error) {
+        console.error('Failed to update collection:', error);
+        throw error;
+    }
+};
+
+export const deleteCollection = async (collectionId: string): Promise<void> => {
+    try {
+        // First delete all collection videos
+        const { documents: collectionVideos } = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('collectionId', collectionId)]
+        );
+        
+        for (const collectionVideo of collectionVideos) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.COLLECTION_VIDEOS,
+                collectionVideo.$id
+            );
+        }
+        
+        // Then delete the collection
+        await databases.deleteDocument(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            collectionId
+        );
+    } catch (error) {
+        console.error('Failed to delete collection:', error);
+        throw error;
+    }
+};
+
+export const getCollectionByName = async (name: string): Promise<Collection | null> => {
+    try {
+        const { documents } = await databases.listDocuments<Collection>(
+            'main',
+            COLLECTIONS.COLLECTIONS,
+            [Query.equal('name', name), Query.limit(1)]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get collection by name:', error);
+        return null;
+    }
+};
+
+export const getOrCreateDefaultCollection = async (): Promise<Collection> => {
+    try {
+        const defaultCollection = await getCollectionByName('未分类');
+        if (defaultCollection) {
+            return defaultCollection;
+        }
+        
+        return await createCollection('未分类', '默认分类，用于存放未分类的视频');
+    } catch (error) {
+        console.error('Failed to get or create default collection:', error);
+        throw error;
+    }
+};
+
+// Collection Video 相关操作
+export const getCollectionVideos = async (collectionId: string): Promise<CollectionVideo[]> => {
+    try {
+        const { documents } = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('collectionId', collectionId), Query.orderDesc('addedAt')]
+        );
+        return documents;
+    } catch (error) {
+        console.error('Failed to get collection videos:', error);
+        return [];
+    }
+};
+
+export const addVideoToCollection = async (collectionId: string, videoId: string): Promise<CollectionVideo> => {
+    try {
+        // Check if video is already in collection
+        const existing = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('collectionId', collectionId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        
+        if (existing.documents.length > 0) {
+            return existing.documents[0]; // Already exists, return existing record
+        }
+        
+        return await databases.createDocument<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            ID.unique(),
+            {
+                collectionId,
+                videoId,
+                addedAt: new Date().toISOString()
+            }
+        );
+    } catch (error) {
+        console.error('Failed to add video to collection:', error);
+        throw error;
+    }
+};
+
+export const removeVideoFromCollection = async (collectionId: string, videoId: string): Promise<void> => {
+    try {
+        const { documents } = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('collectionId', collectionId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        
+        if (documents.length > 0) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.COLLECTION_VIDEOS,
+                documents[0].$id
+            );
+        }
+    } catch (error) {
+        console.error('Failed to remove video from collection:', error);
+        throw error;
+    }
+};
+
+export const isVideoInCollection = async (collectionId: string, videoId: string): Promise<boolean> => {
+    try {
+        const { documents } = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('collectionId', collectionId), Query.equal('videoId', videoId), Query.limit(1)]
+        );
+        return documents.length > 0;
+    } catch (error) {
+        console.error('Failed to check if video is in collection:', error);
+        return false;
+    }
+};
+
+export const getVideoCollections = async (videoId: string): Promise<Collection[]> => {
+    try {
+        const { documents: collectionVideos } = await databases.listDocuments<CollectionVideo>(
+            'main',
+            COLLECTIONS.COLLECTION_VIDEOS,
+            [Query.equal('videoId', videoId)]
+        );
+        
+        if (collectionVideos.length === 0) {
+            return [];
+        }
+        
+        const collectionIds = collectionVideos.map(cv => cv.collectionId);
+        // Fetch each collection individually since Appwrite doesn't support array queries
+        const collections: Collection[] = [];
+        for (const collectionId of collectionIds) {
+            const collection = await getCollection(collectionId);
+            if (collection) {
+                collections.push(collection);
+            }
+        }
+        
+        return collections;
+    } catch (error) {
+        console.error('Failed to get video collections:', error);
+        return [];
+    }
+};
+
+// Collection Summary 相关操作
+export const getCollectionSummary = async (collectionId: string): Promise<CollectionSummary | null> => {
+    try {
+        const { documents } = await databases.listDocuments<CollectionSummary>(
+            'main',
+            COLLECTIONS.COLLECTION_SUMMARIES,
+            [Query.equal('collectionId', collectionId), Query.limit(1)]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get collection summary:', error);
+        return null;
+    }
+};
+
+export const createCollectionSummary = async (summaryData: {
+    collectionId: string;
+    title: string;
+    body: string;
+    keyTakeaway: string;
+    videoIds: string;
+    isStale: boolean;
+}): Promise<CollectionSummary> => {
+    const payload = {
+        collectionId: summaryData.collectionId,
+        title: (summaryData.title || '').slice(0, 500),
+        body: (summaryData.body || '').slice(0, 20000),
+        keyTakeaway: (summaryData.keyTakeaway || '').slice(0, 2000),
+        videoIds: (summaryData.videoIds || '').slice(0, 5000),
+        generatedAt: new Date().toISOString(),
+        isStale: summaryData.isStale ?? false
+    };
+
+    return await databases.createDocument<CollectionSummary>(
+        'main',
+        COLLECTIONS.COLLECTION_SUMMARIES,
+        ID.unique(),
+        payload
+    );
+};
+
+export const updateCollectionSummary = async (collectionId: string, updateData: Partial<{
+    title: string;
+    body: string;
+    keyTakeaway: string;
+    videoIds: string;
+    isStale: boolean;
+}>): Promise<CollectionSummary> => {
+    const existing = await getCollectionSummary(collectionId);
+    if (!existing) {
+        throw new Error('Collection summary not found');
+    }
+    
+    const payload: any = {};
+    if (updateData.title !== undefined) payload.title = (updateData.title || '').slice(0, 500);
+    if (updateData.body !== undefined) payload.body = (updateData.body || '').slice(0, 20000);
+    if (updateData.keyTakeaway !== undefined) payload.keyTakeaway = (updateData.keyTakeaway || '').slice(0, 2000);
+    if (updateData.videoIds !== undefined) payload.videoIds = (updateData.videoIds || '').slice(0, 5000);
+    if (updateData.isStale !== undefined) payload.isStale = updateData.isStale;
+    
+    return await databases.updateDocument<CollectionSummary>(
+        'main',
+        COLLECTIONS.COLLECTION_SUMMARIES,
+        existing.$id,
+        payload
+    );
+};
+
+export const deleteCollectionSummary = async (collectionId: string): Promise<void> => {
+    try {
+        const existing = await getCollectionSummary(collectionId);
+        if (existing) {
+            await databases.deleteDocument(
+                'main',
+                COLLECTIONS.COLLECTION_SUMMARIES,
+                existing.$id
+            );
+        }
+    } catch (error) {
+        console.error('Failed to delete collection summary:', error);
+        throw error;
+    }
+};
+
+export const markCollectionSummaryStale = async (collectionId: string): Promise<void> => {
+    try {
+        const existing = await getCollectionSummary(collectionId);
+        if (existing) {
+            await databases.updateDocument<CollectionSummary>(
+                'main',
+                COLLECTIONS.COLLECTION_SUMMARIES,
+                existing.$id,
+                { isStale: true }
+            );
+        }
+    } catch (error) {
+        console.error('Failed to mark collection summary as stale:', error);
+        // Don't throw error, as this is not critical
+    }
+};
+
+export const checkCollectionSummaryCacheValidity = async (collectionId: string, currentVideoIds: string[]): Promise<boolean> => {
+    try {
+        const cachedSummary = await getCollectionSummary(collectionId);
+        if (!cachedSummary) {
+            return false; // No cache exists
+        }
+
+        if (cachedSummary.isStale) {
+            return false; // Cache is marked as stale
+        }
+
+        // Compare video IDs
+        const cachedVideoIds = cachedSummary.videoIds.split(',').filter(id => id.trim());
+        const currentVideoIdsSorted = [...currentVideoIds].sort();
+        const cachedVideoIdsSorted = [...cachedVideoIds].sort();
+
+        if (currentVideoIdsSorted.length !== cachedVideoIdsSorted.length) {
+            return false; // Different number of videos
+        }
+
+        // Check if all video IDs match
+        for (let i = 0; i < currentVideoIdsSorted.length; i++) {
+            if (currentVideoIdsSorted[i] !== cachedVideoIdsSorted[i]) {
+                return false; // Video lists don't match
+            }
+        }
+
+        return true; // Cache is valid
+    } catch (error) {
+        console.error('Failed to check collection summary cache validity:', error);
+        return false;
     }
 };
 
