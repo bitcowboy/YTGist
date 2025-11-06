@@ -111,6 +111,13 @@
 			if (showEditModal) closeEditModal();
 		}
 	}
+
+	function handleKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			if (showCreateModal) closeCreateModal();
+			if (showEditModal) closeEditModal();
+		}
+	}
 </script>
 
 <svelte:head>
@@ -201,8 +208,10 @@
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
 		onclick={handleBackdropClick}
+		onkeydown={handleKeyDown}
 		role="dialog"
 		aria-modal="true"
+		tabindex="-1"
 	>
 		<div class="bg-zinc-900 rounded-xl border border-zinc-700 w-full max-w-md">
 			<div class="flex items-center justify-between p-6 border-b border-zinc-700">
@@ -275,8 +284,10 @@
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
 		onclick={handleBackdropClick}
+		onkeydown={handleKeyDown}
 		role="dialog"
 		aria-modal="true"
+		tabindex="-1"
 	>
 		<div class="bg-zinc-900 rounded-xl border border-zinc-700 w-full max-w-md">
 			<div class="flex items-center justify-between p-6 border-b border-zinc-700">
