@@ -20,7 +20,8 @@ export const POST: RequestHandler = async () => {
                     { name: 'channelId', type: 'string', size: 255, required: false },
                     { name: 'publishedAt', type: 'string', size: 50, required: false },
                     { name: 'author', type: 'string', size: 255, required: false },
-                    { name: 'hasSubtitles', type: 'boolean', required: false }
+                    { name: 'hasSubtitles', type: 'boolean', required: false },
+                    { name: 'embedding', type: 'double', size: 0, required: false, array: true }
                 ],
                 indexes: [
                     { key: 'videoId', type: 'unique', attributes: ['videoId'] },
@@ -155,6 +156,31 @@ export const POST: RequestHandler = async () => {
                 indexes: [
                     { key: 'collectionId', type: 'unique', attributes: ['collectionId'] }
                 ]
+            },
+            {
+                name: 'clusters',
+                attributes: [
+                    { name: 'name', type: 'string', size: 500, required: true },
+                    { name: 'description', type: 'string', size: 2000, required: false },
+                    { name: 'videoCount', type: 'integer', required: true },
+                    { name: 'createdAt', type: 'datetime', required: true }
+                ],
+                indexes: [
+                    { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
+                ]
+            },
+            {
+                name: 'video_clusters',
+                attributes: [
+                    { name: 'videoId', type: 'string', size: 255, required: true },
+                    { name: 'clusterId', type: 'string', size: 255, required: true },
+                    { name: 'createdAt', type: 'datetime', required: true }
+                ],
+                indexes: [
+                    { key: 'videoId', type: 'key', attributes: ['videoId'] },
+                    { key: 'clusterId', type: 'key', attributes: ['clusterId'] },
+                    { key: 'videoId_clusterId', type: 'key', attributes: ['videoId', 'clusterId'] }
+                ]
             }
         ];
 
@@ -211,6 +237,17 @@ export const POST: RequestHandler = async () => {
                                             existingCollection.$id,
                                             attr.name,
                                             attr.required
+                                        );
+                                    } else if (attr.type === 'double') {
+                                        await (databases.createFloatAttribute as any)(
+                                            'main', 
+                                            existingCollection.$id, 
+                                            attr.name, 
+                                            attr.required,
+                                            undefined,
+                                            undefined,
+                                            undefined,
+                                            attr.array
                                         );
                                     }
                                     console.log(`Added missing attribute '${attr.name}' to '${collection.name}'`);
@@ -276,6 +313,17 @@ export const POST: RequestHandler = async () => {
                                 createdCollection.$id,
                                 attr.name,
                                 attr.required
+                            );
+                        } else if (attr.type === 'double') {
+                            await databases.createFloatAttribute(
+                                'main',
+                                createdCollection.$id,
+                                attr.name,
+                                attr.required,
+                                undefined,
+                                undefined,
+                                undefined,
+                                attr.array
                             );
                         }
                     } catch (attrError) {

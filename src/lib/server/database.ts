@@ -1,6 +1,6 @@
 import { databases } from './appwrite.js';
-import { ID, Query } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, Collection, CollectionVideo, CollectionSummary, AppwriteDocument } from '$lib/types.js';
+import { ID, Query, Permission, Role } from 'node-appwrite';
+import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, Collection, CollectionVideo, CollectionSummary, Cluster, VideoCluster, AppwriteDocument } from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
@@ -14,7 +14,9 @@ export const COLLECTIONS = {
     PROJECT_SUMMARIES: 'project_summaries',
     COLLECTIONS: 'collections',
     COLLECTION_VIDEOS: 'collection_videos',
-    COLLECTION_SUMMARIES: 'collection_summaries'
+    COLLECTION_SUMMARIES: 'collection_summaries',
+    CLUSTERS: 'clusters',
+    VIDEO_CLUSTERS: 'video_clusters'
 } as const;
 
 // Summary 相关操作
@@ -1343,6 +1345,359 @@ export const checkCollectionSummaryCacheValidity = async (collectionId: string, 
     } catch (error) {
         console.error('Failed to check collection summary cache validity:', error);
         return false;
+    }
+};
+
+// Cluster 相关操作
+export const getAllSummariesWithEmbeddings = async (): Promise<Array<{ videoId: string; embedding: number[]; title: string; summary: string }>> => {
+    try {
+        // Use pagination to avoid timeout when fetching large datasets
+        const allDocuments: SummaryData[] = [];
+        let lastId: string | undefined = undefined;
+        const pageSize = 100; // Fetch in smaller batches
+        
+        let pageCount = 0;
+        while (true) {
+            const queries = [Query.limit(pageSize), Query.orderAsc('$id')];
+            if (lastId) {
+                queries.push(Query.cursorAfter(lastId));
+            }
+            
+            pageCount++;
+            console.log(`[getAllSummariesWithEmbeddings] Fetching page ${pageCount}...`);
+            
+            const { documents, total } = await databases.listDocuments<SummaryData>(
+                'main',
+                COLLECTIONS.SUMMARIES,
+                queries
+            );
+            
+            allDocuments.push(...documents);
+            console.log(`[getAllSummariesWithEmbeddings] Page ${pageCount}: fetched ${documents.length} documents (total: ${allDocuments.length}/${total})`);
+            
+            // Check if we've fetched all documents
+            if (documents.length < pageSize || allDocuments.length >= total) {
+                break;
+            }
+            
+            lastId = documents[documents.length - 1].$id;
+            
+            // Add a small delay between pages to avoid overwhelming the API
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        console.log(`[getAllSummariesWithEmbeddings] Fetched ${allDocuments.length} total summaries in ${pageCount} pages`);
+        
+        return allDocuments
+            .filter(doc => {
+                const emb: any = doc.embedding;
+                if (emb === null || emb === undefined) return false;
+                if (typeof emb === 'string') {
+                    return emb.trim() !== '';
+                }
+                if (Array.isArray(emb)) {
+                    return emb.length > 0;
+                }
+                return false;
+            })
+            .map(doc => {
+                let embedding: number[] = [];
+                if (typeof doc.embedding === 'string') {
+                    try {
+                        embedding = JSON.parse(doc.embedding);
+                    } catch (e) {
+                        console.warn(`Failed to parse embedding for video ${doc.videoId}:`, e);
+                        return null;
+                    }
+                } else if (Array.isArray(doc.embedding)) {
+                    embedding = doc.embedding;
+                }
+                
+                if (embedding.length === 0) {
+                    return null;
+                }
+                
+                return {
+                    videoId: doc.videoId,
+                    embedding,
+                    title: doc.title,
+                    summary: doc.summary
+                };
+            })
+            .filter((item): item is { videoId: string; embedding: number[]; title: string; summary: string } => item !== null);
+    } catch (error) {
+        console.error('Failed to get summaries with embeddings:', error);
+        throw error; // Re-throw to let caller handle it
+    }
+};
+
+export const createCluster = async (name: string, description?: string, videoCount: number = 0): Promise<Cluster> => {
+    try {
+        return await databases.createDocument<Cluster>(
+            'main',
+            COLLECTIONS.CLUSTERS,
+            ID.unique(),
+            {
+                name,
+                description,
+                videoCount,
+                createdAt: new Date().toISOString()
+            }
+        );
+    } catch (error) {
+        console.error('Failed to create cluster:', error);
+        throw error;
+    }
+};
+
+export const assignVideoToCluster = async (videoId: string, clusterId: string): Promise<VideoCluster> => {
+    try {
+        // Check if assignment already exists
+        const existing = await databases.listDocuments<VideoCluster>(
+            'main',
+            COLLECTIONS.VIDEO_CLUSTERS,
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('clusterId', clusterId),
+                Query.limit(1)
+            ]
+        );
+        
+        if (existing.documents.length > 0) {
+            return existing.documents[0];
+        }
+        
+        return await databases.createDocument<VideoCluster>(
+            'main',
+            COLLECTIONS.VIDEO_CLUSTERS,
+            ID.unique(),
+            {
+                videoId,
+                clusterId,
+                createdAt: new Date().toISOString()
+            }
+        );
+    } catch (error) {
+        console.error('Failed to assign video to cluster:', error);
+        throw error;
+    }
+};
+
+export const getClusters = async (): Promise<Cluster[]> => {
+    try {
+        // Use pagination to get all clusters (Appwrite has default limit)
+        const allClusters: Cluster[] = [];
+        let lastId: string | undefined = undefined;
+        const pageSize = 100; // Fetch in batches
+        
+        while (true) {
+            const queries = [Query.limit(pageSize), Query.orderDesc('createdAt')];
+            if (lastId) {
+                queries.push(Query.cursorAfter(lastId));
+            }
+            
+            const { documents, total } = await databases.listDocuments<Cluster>(
+                'main',
+                COLLECTIONS.CLUSTERS,
+                queries
+            );
+            
+            allClusters.push(...documents);
+            
+            // Check if we've fetched all clusters
+            if (documents.length < pageSize || allClusters.length >= total) {
+                break;
+            }
+            
+            lastId = documents[documents.length - 1].$id;
+        }
+        
+        console.log(`[getClusters] Fetched ${allClusters.length} clusters`);
+        return allClusters;
+    } catch (error) {
+        console.error('Failed to get clusters:', error);
+        return [];
+    }
+};
+
+export const getOrCreateUncategorizedCluster = async (): Promise<Cluster> => {
+    try {
+        const uncategorizedName = '未分类';
+        // Try to find existing "未分类" cluster
+        const { documents } = await databases.listDocuments<Cluster>(
+            'main',
+            COLLECTIONS.CLUSTERS,
+            [Query.equal('name', uncategorizedName), Query.limit(1)]
+        );
+        
+        if (documents.length > 0) {
+            return documents[0];
+        }
+        
+        // Create new "未分类" cluster if not found
+        return await createCluster(
+            uncategorizedName,
+            'HDBSCAN聚类算法判定为噪声点的视频',
+            0
+        );
+    } catch (error) {
+        console.error('Failed to get or create uncategorized cluster:', error);
+        throw error;
+    }
+};
+
+export const getVideosByCluster = async (clusterId: string): Promise<SummaryData[]> => {
+    try {
+        const { documents: videoClusters } = await databases.listDocuments<VideoCluster>(
+            'main',
+            COLLECTIONS.VIDEO_CLUSTERS,
+            [Query.equal('clusterId', clusterId)]
+        );
+        
+        if (videoClusters.length === 0) {
+            return [];
+        }
+        
+        const videoIds = videoClusters.map(vc => vc.videoId);
+        const summaries: SummaryData[] = [];
+        
+        // Fetch each summary individually since Appwrite doesn't support array queries
+        for (const videoId of videoIds) {
+            const summary = await getSummary(videoId);
+            if (summary) {
+                summaries.push(summary);
+            }
+        }
+        
+        return summaries;
+    } catch (error) {
+        console.error('Failed to get videos by cluster:', error);
+        return [];
+    }
+};
+
+export const updateClusterVideoCount = async (clusterId: string, videoCount: number): Promise<Cluster> => {
+    try {
+        const cluster = await databases.getDocument<Cluster>(
+            'main',
+            COLLECTIONS.CLUSTERS,
+            clusterId
+        );
+        
+        return await databases.updateDocument<Cluster>(
+            'main',
+            COLLECTIONS.CLUSTERS,
+            clusterId,
+            { videoCount }
+        );
+    } catch (error) {
+        console.error('Failed to update cluster video count:', error);
+        throw error;
+    }
+};
+
+export const clearClusterAssignments = async (): Promise<void> => {
+    try {
+        // Step 1: Delete existing collections
+        console.log('[clearClusterAssignments] Deleting existing collections...');
+        
+        const existingCollections = await databases.listCollections('main');
+        
+        // Delete video_clusters collection if it exists
+        const videoClustersCollection = existingCollections.collections.find(c => c.name === COLLECTIONS.VIDEO_CLUSTERS);
+        if (videoClustersCollection) {
+            console.log(`[clearClusterAssignments] Deleting collection '${COLLECTIONS.VIDEO_CLUSTERS}'...`);
+            await databases.deleteCollection('main', videoClustersCollection.$id);
+            console.log(`[clearClusterAssignments] Deleted collection '${COLLECTIONS.VIDEO_CLUSTERS}'`);
+        }
+        
+        // Delete clusters collection if it exists
+        const clustersCollection = existingCollections.collections.find(c => c.name === COLLECTIONS.CLUSTERS);
+        if (clustersCollection) {
+            console.log(`[clearClusterAssignments] Deleting collection '${COLLECTIONS.CLUSTERS}'...`);
+            await databases.deleteCollection('main', clustersCollection.$id);
+            console.log(`[clearClusterAssignments] Deleted collection '${COLLECTIONS.CLUSTERS}'`);
+        }
+        
+        // Step 2: Recreate collections
+        console.log('[clearClusterAssignments] Recreating collections...');
+        
+        // Create clusters collection
+        console.log(`[clearClusterAssignments] Creating collection '${COLLECTIONS.CLUSTERS}'...`);
+        const createdClustersCollection = await databases.createCollection(
+            'main',
+            COLLECTIONS.CLUSTERS,
+            COLLECTIONS.CLUSTERS,
+            [Permission.write(Role.any())]
+        );
+        
+        // Create attributes for clusters
+        await databases.createStringAttribute(
+            'main',
+            createdClustersCollection.$id,
+            'name',
+            500,
+            true
+        );
+        await databases.createStringAttribute(
+            'main',
+            createdClustersCollection.$id,
+            'description',
+            2000,
+            false
+        );
+        await databases.createIntegerAttribute(
+            'main',
+            createdClustersCollection.$id,
+            'videoCount',
+            true
+        );
+        await databases.createDatetimeAttribute(
+            'main',
+            createdClustersCollection.$id,
+            'createdAt',
+            true
+        );
+        
+        console.log(`[clearClusterAssignments] Created collection '${COLLECTIONS.CLUSTERS}'`);
+        
+        // Create video_clusters collection
+        console.log(`[clearClusterAssignments] Creating collection '${COLLECTIONS.VIDEO_CLUSTERS}'...`);
+        const createdVideoClustersCollection = await databases.createCollection(
+            'main',
+            COLLECTIONS.VIDEO_CLUSTERS,
+            COLLECTIONS.VIDEO_CLUSTERS,
+            [Permission.write(Role.any())]
+        );
+        
+        // Create attributes for video_clusters
+        await databases.createStringAttribute(
+            'main',
+            createdVideoClustersCollection.$id,
+            'videoId',
+            255,
+            true
+        );
+        await databases.createStringAttribute(
+            'main',
+            createdVideoClustersCollection.$id,
+            'clusterId',
+            255,
+            true
+        );
+        await databases.createDatetimeAttribute(
+            'main',
+            createdVideoClustersCollection.$id,
+            'createdAt',
+            true
+        );
+        
+        console.log(`[clearClusterAssignments] Created collection '${COLLECTIONS.VIDEO_CLUSTERS}'`);
+        
+        console.log('[clearClusterAssignments] Successfully cleared and recreated cluster collections');
+    } catch (error) {
+        console.error('Failed to clear cluster assignments:', error);
+        throw error;
     }
 };
 

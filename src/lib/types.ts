@@ -52,6 +52,7 @@ export interface SummaryData extends AppwriteDocument {
     commentsSummary?: string;
     commentsKeyPoints?: string[];
     commentsCount?: number;
+    embedding?: number[]; // Embedding vector stored as float array in DB
 }
 
 // 聊天消息类型
@@ -146,4 +147,39 @@ export interface CollectionSummary extends AppwriteDocument {
 	videoIds: string; // comma-separated list of video IDs
 	generatedAt: string;
 	isStale: boolean;
+}
+
+// 聚类类型
+export interface Cluster extends AppwriteDocument {
+	name: string;
+	description?: string;
+	videoCount: number;
+	createdAt: string;
+}
+
+// 视频聚类关联类型
+export interface VideoCluster extends AppwriteDocument {
+	videoId: string;
+	clusterId: string;
+	createdAt: string;
+}
+
+// 聚类层次结构类型
+export interface ClusterHierarchy {
+	lambdaRange: [number, number];
+	levels: ClusterLevel[];
+}
+
+export interface ClusterLevel {
+	lambda: number;
+	clusters: ClusterAssignment[];
+	noiseCount: number;
+	clusterCount: number;
+}
+
+export interface ClusterAssignment {
+	clusterId: string;
+	videoIds: string[];
+	size: number;
+	stability?: number;
 }

@@ -65,6 +65,7 @@ APPWRITE_API_KEY="your-api-key-from-step-2"
 OPENROUTER_API_KEY="your-openrouter-api-key"
 OPENROUTER_MODEL="meta-llama/llama-3.2-3b-instruct:free"
 NONCE_SECRET="any-random-32-character-string"
+OPENAI_API_KEY="your-openai-api-key"  # Required for embedding generation (clustering feature)
 ```
 
 Optional variables (leave empty if not needed):
@@ -77,8 +78,11 @@ YOUTUBE_DATA_API_KEY="" # YouTube Data API Key for fetching data quickly
 ### 5. Install dependencies and run
 
 ```bash
-# Install dependencies (you can use npm too)
+# Install Node.js dependencies (you can use npm too)
 pnpm install
+
+# Install Python dependencies (for clustering feature)
+pip install -r requirements.txt
 
 # Start development server
 pnpm dev

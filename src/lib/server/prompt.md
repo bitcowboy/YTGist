@@ -48,7 +48,7 @@ Single JSON object only:
 - **Bold** key terms. 
 - Try to keep 4 to 7 points, feel free to use more if needed. 
 
-**coreTerms**: Central terms/concepts mentioned. Use `[]` if none. NO **bold** for core terms. 
+**coreTerms**: Central terms, key concepts and main entities mentioned. Use `[]` if none. NO **bold**.
 
 **commentsSummary**: (If comments provided) 简洁总结观众的主要观点和情感，50-100字。如果无评论，返回空字符串。
 

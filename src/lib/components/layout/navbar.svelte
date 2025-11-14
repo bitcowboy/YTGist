@@ -987,6 +987,16 @@ onMount(() => {
 
 		<div class="flex items-center gap-2">
 			<button
+				onclick={() => window.open('/clusters', '_blank')}
+				title="View clusters"
+				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
+			>
+				<svg class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+				</svg>
+				<span class="hidden sm:block">Clusters</span>
+			</button>
+			<button
 				onclick={() => window.open('/projects', '_blank')}
 				title="View projects"
 				class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"

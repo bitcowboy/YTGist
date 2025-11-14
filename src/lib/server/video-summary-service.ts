@@ -2,6 +2,7 @@ import { databases } from '$lib/server/appwrite.js';
 import { upsertTranscript, isChannelBlocked } from '$lib/server/database.js';
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData } from '$lib/server/videoData.js';
+import { generateEmbedding } from '$lib/server/embedding.js';
 import type { SummaryData } from '$lib/types.js';
 import { ID, Query } from 'node-appwrite';
 import OpenAI from 'openai';
@@ -129,6 +130,32 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
             summaryDataSize: JSON.stringify(summaryData).length
         });
 
+        // 6. 生成embedding并保存
+        const step6Start = Date.now();
+        let step6Time = 0;
+        try {
+            // Combine title and summary for embedding generation
+            // const combinedText = `${summaryResult.title}\n\n${summaryResult.summary}`;
+            const embedding = await generateEmbedding(summaryResult.summary);
+            // Store embedding as array directly (Appwrite supports float array)
+            await databases.updateDocument<SummaryData>(
+                'main',
+                'summaries',
+                finalSummaryData.$id,
+                { embedding: embedding }
+            );
+            step6Time = Date.now() - step6Start;
+            console.log(`📊 Video ${videoId} - Step 6 (Generate embedding): ${step6Time}ms`, {
+                embeddingDimensions: embedding.length
+            });
+            // Update finalSummaryData with embedding
+            finalSummaryData = { ...finalSummaryData, embedding };
+        } catch (e) {
+            step6Time = Date.now() - step6Start;
+            console.warn(`📊 Video ${videoId} - Step 6 (Generate embedding) failed: ${step6Time}ms - ${e}`);
+            // Continue even if embedding generation fails
+        }
+
         const totalTime = Date.now() - startTime;
         console.log(`🎉 Unified summary generation completed for ${videoId} in ${totalTime}ms`, {
             breakdown: {
@@ -137,6 +164,7 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
                 step3_unifiedAI: step3Time,
                 step4_saveTranscript: step4Time,
                 step5_saveToDB: step5Time,
+                step6_generateEmbedding: step6Time,
                 total: totalTime
             },
             performance: {
@@ -280,18 +308,6 @@ export const generateVideoSummaryStream = async (
         let firstTokenTime: number = 0;
         let llmFirstResponseTime: number = 0;
         try {
-            // 使用标准JSON格式，让AI返回完整的结构化数据
-            const systemInstruction = `${prompt}\n\n请按照标准JSON格式返回结果，包含以下字段：\n` +
-                `{\n` +
-                `  "summary": "完整的视频总结内容",\n` +
-                `  "keyTakeaway": "关键要点",\n` +
-                `  "keyPoints": ["要点1", "要点2", "要点3"],\n` +
-                `  "coreTerms": ["术语1", "术语2"],\n` +
-                `  "commentsSummary": "观众评论总结",\n` +
-                `  "commentsKeyPoints": ["观众关注点1", "观众关注点2"]\n` +
-                `}\n\n` +
-                `请确保返回的是有效的JSON格式，不要包含任何其他文本或解释。`;
-
             llmRequestStart = Date.now();
             console.log(`📊 Video ${videoId} - LLM request initiated at ${llmRequestStart}`);
             
@@ -299,7 +315,7 @@ export const generateVideoSummaryStream = async (
                 model: OPENROUTER_MODEL,
                 stream: true,
                 messages: [
-                    { role: 'system', content: systemInstruction },
+                    { role: 'system', content: prompt },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
             } as any);
@@ -749,6 +765,30 @@ export const generateVideoSummaryStream = async (
             summaryDataSize: JSON.stringify(summaryData).length
         });
 
+        // 7. 生成embedding并保存
+        const step7Start = Date.now();
+        let step7Time = 0;
+        try {
+            const embedding = await generateEmbedding(structured.summary);
+            // Store embedding as array directly (Appwrite supports double array)
+            await databases.updateDocument<SummaryData>(
+                'main',
+                'summaries',
+                finalSummaryData.$id,
+                { embedding: embedding }
+            );
+            step7Time = Date.now() - step7Start;
+            console.log(`📊 Video ${videoId} - Step 7 (Generate embedding): ${step7Time}ms`, {
+                embeddingDimensions: embedding.length
+            });
+            // Update finalSummaryData with embedding
+            finalSummaryData = { ...finalSummaryData, embedding };
+        } catch (e) {
+            step7Time = Date.now() - step7Start;
+            console.warn(`📊 Video ${videoId} - Step 7 (Generate embedding) failed: ${step7Time}ms - ${e}`);
+            // Continue even if embedding generation fails
+        }
+
         const totalTime = Date.now() - startTime;
         console.log(`🎉 Unified summary pipeline completed for ${videoId} in ${totalTime}ms`, {
             breakdown: {
@@ -758,6 +798,7 @@ export const generateVideoSummaryStream = async (
                 step4_unifiedAI: step4Time,
                 step5_saveTranscript: step5Time,
                 step6_saveToDB: step6Time,
+                step7_generateEmbedding: step7Time,
                 total: totalTime
             },
             llmTiming: {
