@@ -183,3 +183,17 @@ export interface ClusterAssignment {
 	size: number;
 	stability?: number;
 }
+
+// 聚类树状结构类型
+export interface ClusterTreeNode {
+	id: string;
+	lambda: number;
+	videoIds: string[];
+	videoCount: number;
+	children?: ClusterTreeNode[];
+	isExpanded?: boolean;
+}
+
+export interface ClusterTree {
+	root: ClusterTreeNode;
+}

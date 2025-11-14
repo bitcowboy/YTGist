@@ -8,7 +8,8 @@ import {
     updateClusterVideoCount,
     getOrCreateUncategorizedCluster
 } from '$lib/server/database.js';
-import { generateClusterName } from '$lib/server/cluster-name.js';
+// TEMPORARILY DISABLED: AI-generated cluster names
+// import { generateClusterName } from '$lib/server/cluster-name.js';
 import { spawn } from 'child_process';
 import { join } from 'path';
 import { cwd } from 'process';
@@ -182,9 +183,26 @@ export const POST = async ({ request }) => {
                 }
                 
                 // Generate cluster name based on video titles
-                console.log(`[cluster-summaries] Generating name for cluster ${cluster.$id}...`);
+                // TEMPORARILY DISABLED: AI-generated cluster names
+                // console.log(`[cluster-summaries] Generating name for cluster ${cluster.$id}...`);
                 let finalClusterName = cluster.name; // Default to temporary name
                 
+                // Use default name based on cluster size
+                finalClusterName = `聚类（${clusterData.videoIds.length}个视频）`;
+                
+                // Update cluster name in database with default name
+                try {
+                    const { databases } = await import('$lib/server/appwrite.js');
+                    await databases.updateDocument('main', 'clusters', cluster.$id, {
+                        name: finalClusterName
+                    });
+                } catch (updateError) {
+                    console.warn(`[cluster-summaries] Failed to update cluster name:`, updateError);
+                    // Continue anyway - cluster exists with default name
+                }
+                
+                // ORIGINAL AI NAME GENERATION CODE (COMMENTED OUT):
+                /*
                 try {
                     // Get video titles directly from summariesWithEmbeddings (no need to query database)
                     const videoTitles: string[] = [];
@@ -230,6 +248,7 @@ export const POST = async ({ request }) => {
                     console.error(`[cluster-summaries] Unexpected error generating name for cluster ${cluster.$id}:`, err);
                     // Cluster already exists with default name, continue
                 }
+                */
                 
                 // Ensure cluster.name is set correctly for response
                 cluster.name = finalClusterName;
@@ -298,7 +317,8 @@ export const POST = async ({ request }) => {
             totalNoise: noiseVideoIds.length,
             totalReassigned: clusteringResult.totalReassigned || 0,
             totalProcessed: summariesWithEmbeddings.length,
-            hierarchyData: clusteringResult.hierarchyData || null // Add hierarchy information
+            hierarchyData: clusteringResult.hierarchyData || null, // Add hierarchy information
+            treeData: clusteringResult.treeData || null // Add tree structure information
         });
 
     } catch (err) {

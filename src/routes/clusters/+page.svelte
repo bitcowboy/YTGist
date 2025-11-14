@@ -7,8 +7,8 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import LayersIcon from '@lucide/svelte/icons/layers';
-	import type { Cluster, ClusterHierarchy, ClusterLevel } from '$lib/types';
-	import { getCachedHierarchy, cacheHierarchy, clearHierarchyCache } from '$lib/client/cluster-hierarchy';
+	import type { Cluster, ClusterHierarchy, ClusterLevel, ClusterTree, ClusterTreeNode } from '$lib/types';
+	import { getCachedHierarchy, getCachedTree, cacheHierarchy, clearHierarchyCache } from '$lib/client/cluster-hierarchy';
 
 	const { data } = $props();
 
@@ -29,14 +29,21 @@
 		return videoTitles[videoId] || videoId;
 	}
 	
+	// View mode state
+	type ViewMode = 'standard' | 'hierarchy' | 'tree';
+	let viewMode = $state<ViewMode>('standard');
+	
 	// Hierarchy-related state
 	let hierarchyData = $state<ClusterHierarchy | null>(null);
-	let isHierarchyMode = $state(false);
 	let currentLambdaIndex = $state(0);
 	let previousLambdaIndex = $state(0);
 	let isPlaying = $state(false);
 	let playInterval: number | null = null;
 	let isLoadingHierarchy = $state(false);
+	
+	// Tree-related state
+	let treeData = $state<ClusterTree | null>(null);
+	let expandedNodes = $state<Set<string>>(new Set());
 	
 	// Compute current level data
 	let currentLevel = $derived<ClusterLevel | null>(
@@ -116,12 +123,13 @@
 			});
 			
 			// Cache hierarchy data if available
-			if (result.hierarchyData) {
-				console.log('Caching hierarchy data with', result.hierarchyData.levels?.length, 'levels');
-				cacheHierarchy(result.hierarchyData);
+			if (result.hierarchyData || result.treeData) {
+				console.log('Caching hierarchy data with', result.hierarchyData?.levels?.length || 0, 'levels and tree data');
+				cacheHierarchy(result.hierarchyData, result.treeData);
 				hierarchyData = result.hierarchyData;
+				treeData = result.treeData;
 			} else {
-				console.warn('No hierarchy data in response');
+				console.warn('No hierarchy or tree data in response');
 			}
 			
 			success = true;
@@ -161,18 +169,26 @@
 		}
 	}
 	
-	function toggleHierarchyMode() {
-		isHierarchyMode = !isHierarchyMode;
-		
-		if (isHierarchyMode) {
-			// When entering hierarchy mode, try to load data if not already loaded
-			if (!hierarchyData) {
-				loadHierarchyData();
-			}
+	function toggleTreeNode(nodeId: string) {
+		if (expandedNodes.has(nodeId)) {
+			expandedNodes.delete(nodeId);
 		} else {
-			// When exiting hierarchy mode, stop playback
+			expandedNodes.add(nodeId);
+		}
+		expandedNodes = new Set(expandedNodes); // Trigger reactivity
+	}
+	
+	function setViewMode(mode: ViewMode) {
+		if (mode === 'hierarchy' && !hierarchyData) {
+			loadHierarchyData();
+		}
+		if (mode === 'tree' && !treeData) {
+			loadHierarchyData();
+		}
+		if (viewMode === 'hierarchy') {
 			stopPlayback();
 		}
+		viewMode = mode;
 	}
 	
 	function handleSliderChange(event: Event) {
@@ -230,10 +246,18 @@
 	});
 	
 	onMount(() => {
-		// Try to load hierarchy data from cache on mount
+		// Try to load hierarchy and tree data from cache on mount
 		const cached = getCachedHierarchy();
 		if (cached) {
 			hierarchyData = cached;
+		}
+		const cachedTree = getCachedTree();
+		if (cachedTree) {
+			treeData = cachedTree;
+			// Initialize with root expanded
+			if (treeData.root) {
+				expandedNodes.add(treeData.root.id);
+			}
 		}
 	});
 </script>
@@ -251,14 +275,47 @@
 			<p class="mt-2 text-zinc-400">通过HDBSCAN聚类发现的相似视频分组</p>
 		</div>
 		<div class="flex items-center gap-2">
-			<button
-				onclick={toggleHierarchyMode}
-				disabled={isLoadingHierarchy}
-				class="flex items-center gap-2 rounded-lg border border-zinc-600 bg-transparent px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-			>
-				<LayersIcon class="h-4 w-4" />
-				{isHierarchyMode ? '标准视图' : '层次视图'}
-			</button>
+			<!-- View Mode Switcher -->
+			<div class="flex rounded-lg border border-zinc-600 overflow-hidden">
+				<button
+					onclick={() => setViewMode('standard')}
+					class="px-3 py-2 text-sm font-medium transition-colors"
+					class:bg-purple-600={viewMode === 'standard'}
+					class:text-white={viewMode === 'standard'}
+					class:bg-transparent={viewMode !== 'standard'}
+					class:text-zinc-300={viewMode !== 'standard'}
+					class:hover:bg-zinc-700={viewMode !== 'standard'}
+				>
+					<FolderIcon class="h-4 w-4" />
+				</button>
+				<button
+					onclick={() => setViewMode('hierarchy')}
+					class="px-3 py-2 text-sm font-medium transition-colors border-l border-zinc-600"
+					class:bg-purple-600={viewMode === 'hierarchy'}
+					class:text-white={viewMode === 'hierarchy'}
+					class:bg-transparent={viewMode !== 'hierarchy'}
+					class:text-zinc-300={viewMode !== 'hierarchy'}
+					class:hover:bg-zinc-700={viewMode !== 'hierarchy'}
+					disabled={isLoadingHierarchy}
+				>
+					<LayersIcon class="h-4 w-4" />
+				</button>
+				<button
+					onclick={() => setViewMode('tree')}
+					class="px-3 py-2 text-sm font-medium transition-colors border-l border-zinc-600"
+					class:bg-purple-600={viewMode === 'tree'}
+					class:text-white={viewMode === 'tree'}
+					class:bg-transparent={viewMode !== 'tree'}
+					class:text-zinc-300={viewMode !== 'tree'}
+					class:hover:bg-zinc-700={viewMode !== 'tree'}
+					disabled={isLoadingHierarchy}
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+					</svg>
+				</button>
+			</div>
+			
 			<button
 				onclick={regenerateClusters}
 				disabled={isRegenerating}
@@ -271,7 +328,7 @@
 	</div>
 	
 	<!-- Hierarchy Controls -->
-	{#if isHierarchyMode && hierarchyData && hierarchyData.levels.length > 0}
+	{#if viewMode === 'hierarchy' && hierarchyData && hierarchyData.levels.length > 0}
 		<div class="mb-6 rounded-xl border border-purple-500/30 bg-purple-900/10 p-6">
 			<div class="mb-4 flex items-center justify-between">
 				<div>
@@ -324,12 +381,12 @@
 				</div>
 			{/if}
 		</div>
-	{:else if isHierarchyMode && isLoadingHierarchy}
+	{:else if viewMode === 'hierarchy' && isLoadingHierarchy}
 		<div class="mb-6 rounded-xl border border-zinc-700/50 bg-zinc-900/40 p-6 text-center">
 			<RefreshCwIcon class="mx-auto h-8 w-8 animate-spin text-zinc-500 mb-2" />
 			<p class="text-zinc-400">加载层次数据中...</p>
 		</div>
-	{:else if isHierarchyMode && !hierarchyData}
+	{:else if viewMode === 'hierarchy' && !hierarchyData}
 		<div class="mb-6 rounded-xl border border-amber-500/30 bg-amber-900/10 p-6">
 			<p class="text-amber-300 text-sm">
 				层次数据未找到。请先点击"重新生成聚类"按钮以生成层次结构数据。
@@ -349,7 +406,14 @@
 		</div>
 	{/if}
 
-	{#if isHierarchyMode && currentLevel}
+	{#if viewMode === 'tree' && treeData}
+		<!-- Tree Mode: Show hierarchical tree structure -->
+		<div class="space-y-2">
+			{#if treeData.root}
+				{@render TreeNode(treeData.root, 0)}
+			{/if}
+		</div>
+	{:else if viewMode === 'hierarchy' && currentLevel}
 		<!-- Hierarchy Mode: Show clusters from current level -->
 		{#if currentLevel.clusters.length === 0}
 			<div class="rounded-xl border border-dashed border-zinc-700/60 bg-zinc-900/40 p-12 text-center">
@@ -433,7 +497,7 @@
 				{/each}
 			</div>
 		{/if}
-	{:else if !isHierarchyMode}
+	{:else if viewMode === 'standard'}
 		<!-- Standard Mode: Show clusters from database -->
 		{#if clusters.length === 0}
 			<div class="rounded-xl border border-dashed border-zinc-700/60 bg-zinc-900/40 p-12 text-center">
@@ -474,6 +538,95 @@
 		{/if}
 	{/if}
 </main>
+
+{#snippet TreeNode(node: ClusterTreeNode, level: number)}
+	{@const isExpanded = expandedNodes.has(node.id)}
+	{@const hasChildren = node.children && node.children.length > 0}
+	{@const indent = level * 24}
+	
+	<div class="tree-node">
+		<div 
+			class="flex items-start gap-3 rounded-lg border border-zinc-700/50 bg-zinc-900/40 p-4 transition-all hover:bg-zinc-800/40"
+			style="margin-left: {indent}px"
+		>
+			<!-- Expand/Collapse Button -->
+			<button
+				onclick={() => toggleTreeNode(node.id)}
+				class="shrink-0 mt-1 text-zinc-400 hover:text-zinc-100 transition-colors disabled:opacity-30"
+				disabled={!hasChildren}
+			>
+				{#if hasChildren}
+					{#if isExpanded}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+						</svg>
+					{:else}
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+						</svg>
+					{/if}
+				{:else}
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<circle cx="12" cy="12" r="2" />
+					</svg>
+				{/if}
+			</button>
+			
+			<!-- Node Content -->
+			<div class="flex-1 min-w-0">
+				<div class="flex items-center gap-3 mb-2">
+					<h3 class="font-semibold text-zinc-100">
+						{#if level === 0}
+							根节点
+						{:else}
+							聚类 (λ={node.lambda.toFixed(2)})
+						{/if}
+					</h3>
+					<div class="flex items-center gap-2 text-sm text-zinc-400">
+						<VideoIcon class="h-3 w-3" />
+						<span>{node.videoCount} 个视频</span>
+					</div>
+				</div>
+				
+				<!-- Video Preview -->
+				{#if node.videoIds.length > 0}
+					<div class="flex flex-wrap gap-2 mt-2">
+						{#each node.videoIds.slice(0, 3) as videoId}
+							{@const fullTitle = getVideoTitle(videoId)}
+							{@const displayTitle = truncateTitle(fullTitle, 30)}
+							<a
+								href="https://www.youtube.com/watch?v={videoId}"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex items-center gap-1.5 rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-purple-400 transition-colors"
+								title="{fullTitle}"
+							>
+								<svg class="h-3 w-3 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+									<path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+								</svg>
+								<span class="truncate">{displayTitle}</span>
+							</a>
+						{/each}
+						{#if node.videoIds.length > 3}
+							<span class="inline-block rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-500">
+								+{node.videoIds.length - 3} 更多
+							</span>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+		
+		<!-- Render Children -->
+		{#if isExpanded && hasChildren}
+			<div class="mt-2 space-y-2">
+				{#each node.children as child (child.id)}
+					{@render TreeNode(child, level + 1)}
+				{/each}
+			</div>
+		{/if}
+	</div>
+{/snippet}
 
 <style>
 	.line-clamp-2 {

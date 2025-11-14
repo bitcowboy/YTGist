@@ -422,6 +422,176 @@ def main():
         # Combine all clusters
         all_clusters = cluster_list + weak_cluster_list
         
+        # Extract tree structure for hierarchical visualization
+        # Use hierarchy levels to build a tree showing how clusters split
+        print('[Python] Extracting tree structure from hierarchy levels...', file=sys.stderr)
+        tree_data = None
+        try:
+            if hierarchy_data and 'levels' in hierarchy_data:
+                levels = hierarchy_data['levels']
+                
+                if len(levels) > 0:
+                    # Build tree from hierarchy levels
+                    # Start with the coarsest level (lowest lambda) as root
+                    # Then add finer levels (higher lambda) as children
+                    
+                    # Sort levels by lambda (ascending - from coarse to fine)
+                    sorted_levels = sorted(levels, key=lambda x: x['lambda'])
+                    
+                    # Start with root containing all videos
+                    all_video_ids = video_ids
+                    root_tree = {
+                        'id': 'root',
+                        'lambda': 0.0,
+                        'videoIds': all_video_ids,
+                        'videoCount': len(all_video_ids),
+                        'children': []
+                    }
+                    
+                    # Find the first level with multiple clusters (good starting point)
+                    first_multi_cluster_idx = 0
+                    for i, level in enumerate(sorted_levels):
+                        if level['clusterCount'] > 1:
+                            first_multi_cluster_idx = i
+                            break
+                    
+                    print(f'[Python] First level with multiple clusters: index {first_multi_cluster_idx}, lambda={sorted_levels[first_multi_cluster_idx]["lambda"]:.2f}, {sorted_levels[first_multi_cluster_idx]["clusterCount"]} clusters', file=sys.stderr)
+                    
+                    # Use a reasonable number of levels for the tree, starting from first multi-cluster level
+                    tree_levels = []
+                    remaining_levels = sorted_levels[first_multi_cluster_idx:]
+                    step = max(1, len(remaining_levels) // 10)  # Show ~10 levels in tree
+                    for i in range(0, len(remaining_levels), step):
+                        tree_levels.append(remaining_levels[i])
+                    # Always include the finest level
+                    if len(remaining_levels) > 0 and remaining_levels[-1] not in tree_levels:
+                        tree_levels.append(remaining_levels[-1])
+                    
+                    print(f'[Python] Building tree from {len(tree_levels)} sampled levels out of {len(sorted_levels)}', file=sys.stderr)
+                    
+                    # Build tree level by level
+                    def build_tree_from_level(parent_clusters, level_data, level_lambda):
+                        """
+                        For each parent cluster, find which clusters in this level split from it
+                        """
+                        children = []
+                        
+                        for level_cluster in level_data['clusters']:
+                            # Check if this level cluster is a subset of any parent cluster
+                            level_video_set = set(level_cluster['videoIds'])
+                            
+                            for parent in parent_clusters:
+                                parent_video_set = set(parent['videoIds'])
+                                
+                                # If level cluster is a subset of parent
+                                if level_video_set.issubset(parent_video_set):
+                                    # Check if it's a meaningful subset (not the whole parent)
+                                    if len(level_video_set) < len(parent_video_set) * 0.9:
+                                        child_node = {
+                                            'id': level_cluster['clusterId'],
+                                            'lambda': level_lambda,
+                                            'videoIds': level_cluster['videoIds'],
+                                            'videoCount': level_cluster['size'],
+                                            'children': []
+                                        }
+                                        children.append(child_node)
+                                        break
+                        
+                        return children
+                    
+                    # Build tree recursively through levels
+                    current_nodes = [root_tree]
+                    assigned_clusters = set()  # Track which clusters we've already added
+                    
+                    for i, level_data in enumerate(tree_levels):
+                        level_lambda = level_data['lambda']
+                        print(f'[Python] Processing tree level {i+1}/{len(tree_levels)}: lambda={level_lambda:.2f}, {level_data["clusterCount"]} clusters', file=sys.stderr)
+                        
+                        new_nodes = []
+                        
+                        # For each cluster in this level, find its best parent
+                        for cluster in level_data['clusters']:
+                            cluster_id = cluster['clusterId']
+                            if cluster_id in assigned_clusters:
+                                continue
+                                
+                            cluster_video_set = set(cluster['videoIds'])
+                            cluster_size = len(cluster_video_set)
+                            
+                            # Skip very small clusters
+                            if cluster_size < 3:
+                                continue
+                            
+                            # Find the best parent node (smallest node that contains this cluster)
+                            best_parent = None
+                            best_parent_size = float('inf')
+                            best_overlap = 0
+                            
+                            for node in current_nodes:
+                                node_video_set = set(node['videoIds'])
+                                
+                                # Check if cluster is within this node
+                                if cluster_video_set.issubset(node_video_set):
+                                    overlap_ratio = len(cluster_video_set) / len(node_video_set)
+                                    
+                                    # For first level (root children), be more lenient
+                                    if i == 0:
+                                        # Accept any cluster that's not identical to root
+                                        if len(node_video_set) < best_parent_size:
+                                            best_parent = node
+                                            best_parent_size = len(node_video_set)
+                                            best_overlap = overlap_ratio
+                                    else:
+                                        # For deeper levels, must be a meaningful subset
+                                        if overlap_ratio < 0.95:  # Allow up to 95% overlap
+                                            if len(node_video_set) < best_parent_size:
+                                                best_parent = node
+                                                best_parent_size = len(node_video_set)
+                                                best_overlap = overlap_ratio
+                            
+                            # Add as child to best parent
+                            if best_parent is not None:
+                                child_node = {
+                                    'id': cluster_id,
+                                    'lambda': level_lambda,
+                                    'videoIds': cluster['videoIds'],
+                                    'videoCount': cluster_size,
+                                    'children': []
+                                }
+                                best_parent['children'].append(child_node)
+                                new_nodes.append(child_node)
+                                assigned_clusters.add(cluster_id)
+                                print(f'[Python]   Added cluster {cluster_id} ({cluster_size} videos, {best_overlap*100:.1f}% of parent) to parent with {best_parent_size} videos', file=sys.stderr)
+                        
+                        print(f'[Python] Level {i+1}: Added {len(new_nodes)} new child nodes', file=sys.stderr)
+                        
+                        # Update current nodes for next iteration
+                        if len(new_nodes) > 0:
+                            current_nodes = new_nodes
+                        else:
+                            print(f'[Python] No more splits at level {i+1}, stopping tree construction', file=sys.stderr)
+                            break
+                    
+                    tree_data = {'root': root_tree}
+                    
+                    # Count total nodes
+                    def count_nodes(node):
+                        count = 1
+                        for child in node.get('children', []):
+                            count += count_nodes(child)
+                        return count
+                    
+                    total_nodes = count_nodes(root_tree)
+                    print(f'[Python] Successfully built tree with {len(root_tree["children"])} top-level branches and {total_nodes} total nodes', file=sys.stderr)
+                else:
+                    print('[Python] Warning: No hierarchy levels available for tree structure', file=sys.stderr)
+            else:
+                print('[Python] Warning: Hierarchy data not available for tree structure', file=sys.stderr)
+        except Exception as e:
+            print(f'[Python] Warning: Failed to extract tree structure: {e}', file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+        
         result = {
             'clusters': all_clusters,
             'noise': final_noise,
@@ -429,7 +599,8 @@ def main():
             'totalClusters': len(all_clusters),
             'totalNoise': len(final_noise),
             'totalReassigned': len(reassigned_noise),
-            'hierarchyData': hierarchy_data  # Add hierarchy information
+            'hierarchyData': hierarchy_data,  # Add hierarchy information
+            'treeData': tree_data  # Add tree structure information
         }
         
         print('[Python] Outputting results...', file=sys.stderr)

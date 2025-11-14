@@ -2,13 +2,14 @@
  * Client-side caching and management for cluster hierarchy data
  */
 
-import type { ClusterHierarchy } from '$lib/types';
+import type { ClusterHierarchy, ClusterTree } from '$lib/types';
 
 const CACHE_KEY = 'ytgist_cluster_hierarchy';
 const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface CachedHierarchyData {
 	hierarchyData: ClusterHierarchy | null;
+	treeData: ClusterTree | null;
 	timestamp: number;
 	configHash: string;
 }
@@ -65,12 +66,13 @@ export function getCachedHierarchy(): ClusterHierarchy | null {
 /**
  * Save hierarchy data to localStorage
  */
-export function cacheHierarchy(hierarchyData: ClusterHierarchy | null): void {
+export function cacheHierarchy(hierarchyData: ClusterHierarchy | null, treeData: ClusterTree | null = null): void {
 	if (typeof window === 'undefined') return;
 	
 	try {
 		const cached: CachedHierarchyData = {
 			hierarchyData,
+			treeData,
 			timestamp: Date.now(),
 			configHash: getConfigHash()
 		};
@@ -94,6 +96,33 @@ export function clearHierarchyCache(): void {
 		console.log('[cluster-hierarchy] Hierarchy cache cleared');
 	} catch (error) {
 		console.error('[cluster-hierarchy] Error clearing cache:', error);
+	}
+}
+
+/**
+ * Get cached tree data from localStorage
+ */
+export function getCachedTree(): ClusterTree | null {
+	if (typeof window === 'undefined') return null;
+	
+	try {
+		const cachedStr = localStorage.getItem(CACHE_KEY);
+		if (!cachedStr) return null;
+		
+		const cached: CachedHierarchyData = JSON.parse(cachedStr);
+		
+		if (isCacheValid(cached)) {
+			console.log('[cluster-hierarchy] Using cached tree data');
+			return cached.treeData;
+		} else {
+			console.log('[cluster-hierarchy] Cache expired or invalid, clearing');
+			localStorage.removeItem(CACHE_KEY);
+			return null;
+		}
+	} catch (error) {
+		console.error('[cluster-hierarchy] Error reading tree cache:', error);
+		localStorage.removeItem(CACHE_KEY);
+		return null;
 	}
 }
 
@@ -133,9 +162,10 @@ export async function fetchAndCacheHierarchy(): Promise<ClusterHierarchy | null>
 		
 		const result = await response.json();
 		const hierarchyData = result.hierarchyData || null;
+		const treeData = result.treeData || null;
 		
 		// Cache the data
-		cacheHierarchy(hierarchyData);
+		cacheHierarchy(hierarchyData, treeData);
 		
 		return hierarchyData;
 	} catch (error) {
