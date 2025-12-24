@@ -1,7 +1,12 @@
 import { FREE_TRANSCRIPT_ENDPOINT, PROXY_URI } from '$env/static/private';
 import { ProxyAgent } from 'undici';
 import { Innertube, Platform, UniversalCache } from 'youtubei.js';
-
+import { fetchTranscriptForVideo } from './captions/transcript-service';
+import { fetchTimedTextXml } from './captions/transcript-service';
+import { parseTimedTextXml } from './captions/transcript-parser';
+import { convertToYouTubeSegments } from './captions/transcript-parser';
+import type { TranscriptSegment } from './captions/transcript-parser';
+import { initializeYouTube } from './captions/client';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new ProxyAgent(PROXY_URI) : null;
@@ -19,10 +24,10 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
 export const getTranscript = async (videoId: string) => {
     // If FREE_TRANSCRIPT_ENDPOINT is not available, go straight to methodTwo
     if (!FREE_TRANSCRIPT_ENDPOINT) {
-        console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodTwo');
+        console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodThree');
         try {
             return await withTimeout(
-                methodTwo(videoId), 
+                methodThree(videoId), 
                 15000, 
                 'Transcript fetch timeout after 15 seconds'
             );
@@ -32,8 +37,8 @@ export const getTranscript = async (videoId: string) => {
                 console.info('Transcript not available (no subtitles).');
                 throw error;
             }
-            console.warn('methodTwo failed:', error);
-            throw new Error('Failed to get transcript: methodTwo failed');
+            console.warn('methodThree failed:', error);
+            throw new Error('Failed to get transcript: methodThree failed');
         }
     }
 
@@ -46,21 +51,21 @@ export const getTranscript = async (videoId: string) => {
             'MethodOne timeout after 10 seconds'
         );
     } catch (error) {
-        console.warn('methodOne failed, falling back to methodTwo:', error);
+        console.warn('methodOne failed, falling back to methodThree:', error);
     }
 
     // Fallback to methodTwo with timeout
     try {
-        console.log('Using methodTwo as fallback...');
+        console.log('Using methodThree as fallback...');
         return await withTimeout(
-            methodTwo(videoId), 
+            methodThree(videoId), 
             15000, 
             'Transcript fetch timeout after 15 seconds'
         );
     } catch (error) {
         // If it's a no subtitles error, preserve it with low-noise log
         if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
-            console.info('Transcript not available via methodTwo');
+            console.info('Transcript not available via methodThree');
             throw error;
         }
         console.error('All transcript methods failed:', error);
@@ -111,7 +116,7 @@ const methodTwo = async (videoId: string) => {
     console.log(`[methodTwo] Starting transcript extraction for video: ${videoId}`);
     
     const innertubeOptions: any = {
-        cache: new UniversalCache(false)
+        cache: new UniversalCache(true)
     };
 
     // Only use proxy if proxyAgent is available
@@ -204,3 +209,27 @@ const methodTwo = async (videoId: string) => {
     }
 }
 
+const methodThree = async (videoId: string) => {
+    console.log(`[methodThree] Starting transcript extraction for video: ${videoId}`);
+    
+    const [youtube, clientError] = await initializeYouTube();
+    if (clientError) {
+      console.error('[methodThree] Failed to initialize YouTube client:', clientError);
+      throw new Error('Failed to initialize YouTube client');
+    }
+
+    if (!youtube) {
+      console.error('[methodThree] Failed to initialize YouTube client');
+      throw new Error('Failed to initialize YouTube client');
+    }
+
+    console.log('[methodThree] Fetching transcript for video:', videoId);
+    const result = await fetchTranscriptForVideo(youtube, videoId);
+
+    if (result && 'segments' in result) {
+      const transcript = result.segments.map(s => s.snippet.text).join(' ');
+      return transcript;
+    }
+
+    throw new Error('NO_SUBTITLES_AVAILABLE');
+}
