@@ -4,7 +4,7 @@ import { Innertube, Platform, UniversalCache } from 'youtubei.js';
 import { fetchTranscriptForVideo } from './captions/transcript-service';
 import { fetchTimedTextXml } from './captions/transcript-service';
 import { parseTimedTextXml } from './captions/transcript-parser';
-import { convertToYouTubeSegments } from './captions/transcript-parser';
+import { convertToYouTubeSegments, formatTimestamp } from './captions/transcript-parser';
 import type { TranscriptSegment } from './captions/transcript-parser';
 import { initializeYouTube } from './captions/client';
 
@@ -172,7 +172,15 @@ const methodTwo = async (videoId: string) => {
             });
             
             const transcript = segments
-                .map((segment) => segment.snippet.text)
+                .map((segment) => {
+                    const text = segment.snippet.text;
+                    const startTimeMs = (segment as any).start_time_ms;
+                    if (startTimeMs !== undefined && startTimeMs !== null) {
+                        const timestamp = formatTimestamp(startTimeMs);
+                        return `[${timestamp}] ${text}`;
+                    }
+                    return text;
+                })
                 .join('\n');
                 
             console.log('[methodTwo] Generated transcript length:', transcript.length);
@@ -227,7 +235,13 @@ const methodThree = async (videoId: string) => {
     const result = await fetchTranscriptForVideo(youtube, videoId);
 
     if (result && 'segments' in result) {
-      const transcript = result.segments.map(s => s.snippet.text).join(' ');
+      const transcript = result.segments
+        .map(s => {
+          const text = s.snippet.text;
+          const timestamp = s.start_time_text?.text || formatTimestamp(parseInt(s.start_ms));
+          return `[${timestamp}] ${text}`;
+        })
+        .join(' ');
       return transcript;
     }
 

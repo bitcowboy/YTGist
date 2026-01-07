@@ -7,7 +7,7 @@ Here are the input, output and rules:
 - Video Title
 - Author
 - Description
-- Transcript
+- Transcript (formatted as `[timestamp] text content`, e.g., `[00:01:23] This is the transcript content`. Timestamps indicate the position of each segment in the video.)
 - Audience Comments (optional)
 
 
@@ -19,8 +19,8 @@ Single JSON object only:
   "keyTakeaway": "Most important insights.",
   "summary": "Summarize the video in 3-5 paragraphs according to the length/density of the transcript.",
   "keyPoints": [
-    "Key actionable insight as complete sentence.",
-    "Another key insight."
+    "03:00 - Key actionable insight as complete sentence.",
+    "08:05 - Another key insight."
   ],
   "coreTerms": [
     "Important term",
@@ -44,7 +44,9 @@ Single JSON object only:
 - Summary should cover main topic and why it matters, key arguments/methods/findings, conclusions and practical implications. Don't using leading words like "Main topic", "Conclusions", etc.
 
 **points**: 
-- Most important actionable insights. 
+- Time stamp and Most important actionable insights. 
+- Example: "03:00 - Most important actionable insights.",
+- Example: "08:05 - Another key insight."
 - **Bold** key terms. 
 - Try to keep 4 to 7 points, feel free to use more if needed. 
 
