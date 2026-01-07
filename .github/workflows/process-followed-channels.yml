@@ -1,9 +1,9 @@
 name: Process Followed Channels
 
 on:
-  schedule:
-    # 每 1 小时运行一次 (UTC 时间) - 增量更新更高效，可以更频繁
-    - cron: '0 */1 * * *'
+  # schedule:
+  #   # 每 1 小时运行一次 (UTC 时间) - 增量更新更高效，可以更频繁
+  #   - cron: '0 */1 * * *'
   workflow_dispatch: # 允许手动触发
 
 jobs:
@@ -33,3 +33,4 @@ jobs:
             echo "Response: $response"
             exit 1
           fi
+
