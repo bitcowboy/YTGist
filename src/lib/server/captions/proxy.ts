@@ -1,5 +1,6 @@
 // proxy.ts
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { PROXY_URI } from '$env/static/private';
 
 let proxyAgent: ProxyAgent | null = null;
 let proxyFailed = false;
@@ -41,7 +42,7 @@ export function getProxyFetch(): typeof fetch | undefined {
     return undefined;
   }
 
-  const proxyUrl = process.env.PROXY_URL;
+  const proxyUrl = PROXY_URI;
   if (!proxyUrl || proxyFailed) {
     if (!proxyConfigured) {
       proxyConfigured = true;
