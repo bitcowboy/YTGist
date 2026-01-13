@@ -1,4 +1,4 @@
-import type { SummaryData } from '$lib/types';
+import type { FullSummaryData } from '$lib/types';
 
 export type TodayHistoryEntry = {
 	videoId: string;
@@ -55,7 +55,7 @@ function pruneOldDays(map: TodayHistoryMap) {
 	}
 }
 
-export function addTodayHistoryEntry(summary: SummaryData | null | undefined) {
+export function addTodayHistoryEntry(summary: FullSummaryData | null | undefined) {
 	if (!isBrowser || !summary?.videoId) return;
 	if (summary.hasSubtitles === false) return;
 

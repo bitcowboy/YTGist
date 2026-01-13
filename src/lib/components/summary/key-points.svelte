@@ -1,10 +1,10 @@
 <script lang="ts">
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
-	import type { SummaryData } from '$lib/types';
+	import type { FullSummaryData } from '$lib/types';
 	import { marked } from 'marked';
 
-	let { summaryData }: { summaryData: SummaryData } = $props();
+	let { summaryData }: { summaryData: FullSummaryData } = $props();
 
 	let pointsHtml = $derived(
 		summaryData ? summaryData.keyPoints.map((point) => marked.parse(point)) : []

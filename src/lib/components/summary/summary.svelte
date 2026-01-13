@@ -1,9 +1,9 @@
 <script lang="ts">
     import BookOpenIcon from '@lucide/svelte/icons/book-open';
-    import type { SummaryData } from '$lib/types';
+    import type { FullSummaryData } from '$lib/types';
     import { marked } from 'marked';
 
-    let { summaryData, streamingText = '' }: { summaryData: SummaryData; streamingText?: string } = $props();
+    let { summaryData, streamingText = '' }: { summaryData: FullSummaryData; streamingText?: string } = $props();
 
     let summaryHtml = $derived(summaryData ? marked.parse(summaryData.summary) : '');
     let streamingHtml = $derived(streamingText && streamingText.length > 0 ? marked.parse(streamingText) : '');

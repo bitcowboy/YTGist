@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { SummaryData, VideoMeta } from '$lib/types';
+	import type { FullSummaryData, VideoMeta } from '$lib/types';
 	import YoutubeLogo from '$lib/components/shared/youtube-logo.svelte';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import ShareIcon from '@lucide/svelte/icons/share';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import { tick } from 'svelte';
 
-	let { summaryData }: { summaryData: SummaryData } = $props();
+	let { summaryData }: { summaryData: FullSummaryData } = $props();
 
 	let copied = $state(false);
 	let videoUrl = $derived(`https://www.youtubegist.com/watch?v=${summaryData?.videoId}`);

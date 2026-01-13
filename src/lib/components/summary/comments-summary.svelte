@@ -1,10 +1,10 @@
 <script lang="ts">
 	import MessageSquareIcon from '@lucide/svelte/icons/message-square';
-	import type { SummaryData } from '$lib/types';
+	import type { FullSummaryData } from '$lib/types';
 	import { marked } from 'marked';
 
 	let { summaryData, streamingCommentsSummary = '' }: { 
-		summaryData: SummaryData; 
+		summaryData: FullSummaryData; 
 		streamingCommentsSummary?: string; 
 	} = $props();
 

@@ -1,17 +1,54 @@
 import { getVideoDataWithoutTranscript } from '$lib/server/videoData.js';
 import { validateNonce } from '$lib/server/nonce.js';
 import { generateVideoSummary, generateVideoSummaryStream } from '$lib/server/video-summary-service.js';
+import { PlatformFactory } from '$lib/server/platforms/platform-factory';
+import type { VideoPlatform, SummaryData, FullSummaryData } from '$lib/types';
 import { error, json } from '@sveltejs/kit';
 import { ID, Query } from 'node-appwrite';
 import { databases } from '$lib/server/appwrite.js';
-import type { SummaryData } from '$lib/types.js';
+import { getFullSummary, COLLECTIONS } from '$lib/server/database.js';
 
 export const GET = async ({ url }) => {
     const videoId = url.searchParams.get('v');
     const nonce = url.searchParams.get('nonce');
+    const platformParam = url.searchParams.get('platform') as VideoPlatform | null;
+    let subtitleUrl = url.searchParams.get('subtitle_url') || undefined;
+    
+    // 解码 subtitle_url：先 URL 解码，再 base64 解码
+    if (subtitleUrl) {
+        try {
+            // 1. URL 解码
+            const urlDecoded = decodeURIComponent(subtitleUrl);
+            // 2. Base64 解码
+            subtitleUrl = Buffer.from(urlDecoded, 'base64').toString('utf-8');
+            console.log(`[get-summary] ✅ 解码 subtitle_url 成功，长度: ${subtitleUrl.length}`);
+        } catch (decodeError) {
+            console.warn(`[get-summary] ⚠️ subtitle_url 解码失败，使用原始值:`, decodeError);
+            // 如果解码失败，使用原始值（可能是未编码的）
+        }
+    }
 
-    if (!videoId || videoId.length !== 11) {
-        return error(400, 'Bad YouTube video ID!');
+    if (!videoId) {
+        return error(400, 'Video ID is required');
+    }
+
+    // 如果没有指定平台，尝试从视频ID识别平台
+    let platform: VideoPlatform = platformParam || 'youtube';
+    if (!platformParam) {
+        const identifiedPlatform = PlatformFactory.identifyPlatformByVideoId(videoId);
+        if (identifiedPlatform) {
+            platform = identifiedPlatform;
+        }
+    }
+
+    // 验证视频ID格式
+    const platformInstance = PlatformFactory.getPlatform(platform);
+    if (!platformInstance) {
+        return error(400, `Unsupported platform: ${platform}`);
+    }
+
+    if (!platformInstance.validateVideoId(videoId)) {
+        return error(400, `Invalid video ID format for platform ${platform}`);
     }
 
     if (!nonce || !validateNonce(nonce)) {
@@ -21,16 +58,13 @@ export const GET = async ({ url }) => {
     try {
         const reqStart = Date.now();
         console.log(`[get-summary] ▶️ request start v=${videoId}`);
-        // 首先检查缓存
+        // 首先检查缓存（使用新的分表查询函数）
         try {
-            const cached = await databases.listDocuments<SummaryData>('main', 'summaries', [
-                Query.equal('videoId', videoId),
-                Query.limit(1)
-            ]);
-            if (cached.total > 0) {
+            const cached = await getFullSummary(videoId, platform);
+            if (cached) {
                 const elapsed = Date.now() - reqStart;
                 console.log(`[get-summary] ✅ cache hit v=${videoId} in ${elapsed}ms`);
-                return json(cached.documents[0]);
+                return json(cached);
             }
         } catch (cacheErr) {
             console.warn('Cache check failed, continue with generation:', cacheErr);
@@ -65,8 +99,8 @@ export const GET = async ({ url }) => {
                 }, 15000);
 
                 const genStart = Date.now();
-                console.log(`[get-summary] 🚀 start streaming generation v=${videoId}`);
-                generateVideoSummaryStream(videoId, {
+                console.log(`[get-summary] 🚀 start streaming generation v=${videoId} platform=${platform}${subtitleUrl ? ' with subtitleUrl' : ''}`);
+                generateVideoSummaryStream(videoId, platform, {
                     onDelta: (delta) => {
                         // per-char delta already split at service layer
                         safeEnqueue(`event: summary-delta\n` + `data: ${JSON.stringify({ delta })}\n\n`);
@@ -82,7 +116,7 @@ export const GET = async ({ url }) => {
                         // console.log(`[get-summary] 🧩 partial fields=${keys}`);
                         send('summary-partial', partial);
                     }
-                })
+                }, subtitleUrl)
                 .then((result) => {
                     if (!result.success) {
                         if (result.errorType === 'CHANNEL_BLOCKED') {
@@ -139,10 +173,10 @@ export const GET = async ({ url }) => {
             name: e instanceof Error ? e.name : 'Unknown'
         });
 
-        // 处理无字幕情况：创建占位记录
+        // 处理无字幕情况：创建占位记录（使用分表结构）
         if (e instanceof Error && e.message === 'NO_SUBTITLES_AVAILABLE') {
             try {
-                const basic = await getVideoDataWithoutTranscript(videoId);
+                const basic = await getVideoDataWithoutTranscript(videoId, platform);
                 
                 // 检查频道是否被阻止
                 const { isChannelBlocked } = await import('$lib/server/database.js');
@@ -153,39 +187,61 @@ export const GET = async ({ url }) => {
                 }
                 
                 const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
-                const existing = await databases.listDocuments<SummaryData>('main', 'summaries', [
-                    Query.equal('videoId', videoId),
+                const safeVideoId = clamp(videoId, 50);
+                
+                // 检查主表是否存在
+                const existing = await databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
+                    Query.equal('videoId', safeVideoId),
+                    Query.equal('platform', platform),
                     Query.limit(1)
                 ]);
                 
+                // 主表数据
+                const mainData = {
+                    videoId: safeVideoId,
+                    platform: platform,
+                    channelId: clamp(basic.channelId, 50),
+                    title: clamp(basic.title, 200),
+                    author: clamp(basic.author, 150),
+                    publishedAt: basic.publishedAt,
+                    hasSubtitles: false,
+                    description: clamp(basic.description, 2000),
+                    hits: 0
+                };
+                
                 if (existing.total > 0) {
-                    const doc = existing.documents[0];
-                    await databases.updateDocument<SummaryData>('main', 'summaries', doc.$id, {
-                        title: clamp(basic.title, 100),
-                        description: clamp(basic.description, 5000),
-                        author: clamp(basic.author, 100),
-                        channelId: basic.channelId,
-                        summary: '',
-                        keyPoints: [],
-                        keyTakeaway: '',
-                        coreTerms: [],
-                        hasSubtitles: false,
-                        publishedAt: basic.publishedAt
-                    });
+                    await databases.updateDocument<SummaryData>('main', COLLECTIONS.SUMMARIES, existing.documents[0].$id, mainData);
                 } else {
-                    await databases.createDocument<SummaryData>('main', 'summaries', ID.unique(), {
-                        videoId,
-                        title: clamp(basic.title, 100),
-                        description: clamp(basic.description, 5000),
-                        author: clamp(basic.author, 100),
-                        channelId: basic.channelId,
-                        summary: '',
-                        keyPoints: [],
+                    await databases.createDocument<SummaryData>('main', COLLECTIONS.SUMMARIES, ID.unique(), mainData);
+                }
+                
+                // 创建空的摘要内容子表
+                const existingSummary = await databases.listDocuments('main', COLLECTIONS.VIDEO_SUMMARIES, [
+                    Query.equal('videoId', safeVideoId),
+                    Query.equal('platform', platform),
+                    Query.limit(1)
+                ]);
+                if (existingSummary.total === 0) {
+                    await databases.createDocument('main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), {
+                        videoId: safeVideoId,
+                        platform: platform,
+                        summary: ''
+                    });
+                }
+                
+                // 创建空的关键要点子表
+                const existingInsights = await databases.listDocuments('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
+                    Query.equal('videoId', safeVideoId),
+                    Query.equal('platform', platform),
+                    Query.limit(1)
+                ]);
+                if (existingInsights.total === 0) {
+                    await databases.createDocument('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), {
+                        videoId: safeVideoId,
+                        platform: platform,
                         keyTakeaway: '',
-                        coreTerms: [],
-                        hasSubtitles: false,
-                        publishedAt: basic.publishedAt,
-                        hits: 0
+                        keyPoints: '[]',  // JSON 字符串格式
+                        coreTerms: '[]'   // JSON 字符串格式
                     });
                 }
             } catch (persistErr) {

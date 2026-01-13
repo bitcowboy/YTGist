@@ -1,8 +1,9 @@
 import { error, json } from '@sveltejs/kit';
 import { databases } from '$lib/server/appwrite.js';
 import { generateEmbedding } from '$lib/server/embedding.js';
+import { COLLECTIONS, upsertVideoEmbedding, getVideoSummaryContent } from '$lib/server/database.js';
 import { Query } from 'node-appwrite';
-import type { SummaryData } from '$lib/types.js';
+import type { SummaryData, VideoSummaryContent, VideoPlatform } from '$lib/types.js';
 
 export const POST = async ({ request }) => {
     try {
@@ -10,8 +11,8 @@ export const POST = async ({ request }) => {
 
         console.log('[recalculate-embeddings] Starting batch embedding recalculation...');
 
-        // Get all summaries with pagination
-        const allSummaries: SummaryData[] = [];
+        // Get all summaries from main table with pagination
+        const allMainSummaries: SummaryData[] = [];
         let lastId: string | undefined = undefined;
         const pageSize = 100;
         
@@ -23,38 +24,37 @@ export const POST = async ({ request }) => {
             
             const { documents, total } = await databases.listDocuments<SummaryData>(
                 'main',
-                'summaries',
+                COLLECTIONS.SUMMARIES,
                 queries
             );
             
-            allSummaries.push(...documents);
+            allMainSummaries.push(...documents);
             
-            if (documents.length < pageSize || allSummaries.length >= total) {
+            if (documents.length < pageSize || allMainSummaries.length >= total) {
                 break;
             }
             
             lastId = documents[documents.length - 1].$id;
         }
 
-        console.log(`[recalculate-embeddings] Found ${allSummaries.length} total summaries`);
+        console.log(`[recalculate-embeddings] Found ${allMainSummaries.length} total summaries in main table`);
 
-        // Filter summaries that have both title and summary
-        const summariesToProcess = allSummaries.filter(doc => {
-            return doc.title && doc.title.trim() !== '' && 
-                   doc.summary && doc.summary.trim() !== '';
+        // Filter summaries that have title
+        const summariesToProcess = allMainSummaries.filter(doc => {
+            return doc.title && doc.title.trim() !== '';
         });
 
         if (summariesToProcess.length === 0) {
             return json({
                 success: true,
-                message: 'No summaries with title and summary found',
+                message: 'No summaries found',
                 processed: 0,
                 failed: 0,
                 total: 0
             });
         }
 
-        console.log(`[recalculate-embeddings] Found ${summariesToProcess.length} summaries with title and summary to process`);
+        console.log(`[recalculate-embeddings] Found ${summariesToProcess.length} summaries to process`);
 
         // Process in batches
         const batches = [];
@@ -64,36 +64,38 @@ export const POST = async ({ request }) => {
 
         let processed = 0;
         let failed = 0;
+        let skipped = 0;
         const errors: Array<{ videoId: string; error: string }> = [];
 
         for (const batch of batches) {
             console.log(`[recalculate-embeddings] Processing batch: ${batch.length} summaries`);
             
-            const batchPromises = batch.map(async (summary) => {
+            const batchPromises = batch.map(async (mainSummary) => {
                 try {
-                    // Combine title and summary for embedding generation
-                    // const combinedText = `${summary.title}\n\n${summary.summary}`;
+                    // Get summary content from video_summaries table
+                    const summaryContent = await getVideoSummaryContent(mainSummary.videoId, mainSummary.platform as VideoPlatform);
                     
-                    // Generate new embedding using title + summary
-                    const embedding = await generateEmbedding(summary.summary);
+                    if (!summaryContent || !summaryContent.summary || summaryContent.summary.trim() === '') {
+                        skipped++;
+                        console.log(`[recalculate-embeddings] ⏭️ Skipped video ${mainSummary.videoId} - no summary content`);
+                        return { videoId: mainSummary.videoId, success: true, skipped: true };
+                    }
                     
-                    // Update the document with new embedding (store as array directly)
-                    await databases.updateDocument<SummaryData>(
-                        'main',
-                        'summaries',
-                        summary.$id,
-                        { embedding: embedding }
-                    );
+                    // Generate new embedding using summary
+                    const embedding = await generateEmbedding(summaryContent.summary);
+                    
+                    // Save to video_embeddings table
+                    await upsertVideoEmbedding(mainSummary.videoId, mainSummary.platform as VideoPlatform, embedding);
                     
                     processed++;
-                    console.log(`[recalculate-embeddings] ✅ Recalculated embedding for video ${summary.videoId} (${embedding.length} dimensions)`);
-                    return { videoId: summary.videoId, success: true };
+                    console.log(`[recalculate-embeddings] ✅ Recalculated embedding for video ${mainSummary.videoId} (${embedding.length} dimensions)`);
+                    return { videoId: mainSummary.videoId, success: true };
                 } catch (err) {
                     failed++;
                     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-                    console.error(`[recalculate-embeddings] ❌ Failed for video ${summary.videoId}: ${errorMsg}`);
-                    errors.push({ videoId: summary.videoId, error: errorMsg });
-                    return { videoId: summary.videoId, success: false, error: errorMsg };
+                    console.error(`[recalculate-embeddings] ❌ Failed for video ${mainSummary.videoId}: ${errorMsg}`);
+                    errors.push({ videoId: mainSummary.videoId, error: errorMsg });
+                    return { videoId: mainSummary.videoId, success: false, error: errorMsg };
                 }
             });
 
@@ -105,12 +107,13 @@ export const POST = async ({ request }) => {
             }
         }
 
-        console.log(`[recalculate-embeddings] Completed: ${processed} processed, ${failed} failed`);
+        console.log(`[recalculate-embeddings] Completed: ${processed} processed, ${skipped} skipped, ${failed} failed`);
 
         return json({
             success: true,
-            message: `Processed ${processed} summaries, ${failed} failed`,
+            message: `Processed ${processed} summaries, ${skipped} skipped, ${failed} failed`,
             processed,
+            skipped,
             failed,
             total: summariesToProcess.length,
             errors: errors.length > 0 ? errors : undefined
