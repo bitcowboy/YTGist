@@ -1,0 +1,41 @@
+<script lang="ts">
+	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
+	import UserMinusIcon from '@lucide/svelte/icons/user-minus';
+
+	interface Props {
+		isFollowed: boolean;
+		isFollowing: boolean;
+		disabled?: boolean;
+		channelName?: string | null;
+		onClick: () => void;
+	}
+
+	const { 
+		isFollowed, 
+		isFollowing, 
+		disabled = false, 
+		channelName, 
+		onClick 
+	}: Props = $props();
+</script>
+
+<button
+	onclick={onClick}
+	disabled={isFollowing || disabled || !channelName}
+	class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 {isFollowed ? 'hover:bg-red-500/10 text-zinc-300 hover:text-red-300' : 'hover:bg-green-500/10 text-zinc-300 hover:text-green-300'} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+	title={
+		!channelName 
+			? 'Loading channel information...' 
+			: isFollowed 
+				? `Unfollow channel "${channelName}"` 
+				: `Follow channel "${channelName}"`
+	}
+>
+	{#if isFollowed}
+		<UserMinusIcon class="h-4 w-4 transition-colors duration-200 {isFollowing ? 'animate-pulse' : ''}" />
+		<span class="hidden sm:block">{isFollowing ? 'Unfollowing...' : 'Unfollow Channel'}</span>
+	{:else}
+		<UserPlusIcon class="h-4 w-4 transition-colors duration-200 {isFollowing ? 'animate-pulse' : ''}" />
+		<span class="hidden sm:block">{isFollowing ? 'Following...' : 'Follow Channel'}</span>
+	{/if}
+</button>

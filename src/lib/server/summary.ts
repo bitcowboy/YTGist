@@ -1,7 +1,7 @@
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
 import prompt from "$lib/server/prompt.md?raw";
-import type { SummaryData, VideoMeta } from '$lib/types';
+import type { AISummaryResult, VideoMeta } from '$lib/types';
 import * as undici from 'undici';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
@@ -55,7 +55,7 @@ const responseSchema = {
 	additionalProperties: false,
 };
 
-export const getSummary = async (videoData: VideoMeta) => {
+export const getSummary = async (videoData: VideoMeta): Promise<AISummaryResult> => {
 	try {
 		// 检查是否有字幕，如果没有字幕则抛出错误
 		if (!videoData.hasSubtitles || !videoData.transcript || videoData.transcript.trim() === '') {
@@ -112,7 +112,7 @@ export const getSummary = async (videoData: VideoMeta) => {
 			coreTerms: ["无法生成核心术语"],
 			commentsSummary: "",
 			commentsKeyPoints: []
-		}) as SummaryData;
+		}) as AISummaryResult;
 	} catch (error) {
 		console.error('Failed to generate summary:', error);
 		throw new Error('Failed to generate summary.');

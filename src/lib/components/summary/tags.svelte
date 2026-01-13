@@ -1,12 +1,12 @@
 <script lang="ts">
 	import BookOpenIcon from '@lucide/svelte/icons/book-open';
 
-	import type { SummaryData } from '$lib/types';
+	import type { FullSummaryData } from '$lib/types';
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import Divider from '$lib/components/shared/divider.svelte';
 
-	let { summaryData }: { summaryData: SummaryData } = $props();
+	let { summaryData }: { summaryData: FullSummaryData } = $props();
 
 	let overflowChecked = $state(false);
 	let showAllTags = $state(false);

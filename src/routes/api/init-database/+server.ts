@@ -8,25 +8,90 @@ export const POST: RequestHandler = async () => {
         console.log('Initializing database collections...');
         
         const collections = [
+            // ============ 分表设计 ============
+            // 主表：summaries - 存储视频基础信息和元数据
             {
                 name: 'summaries',
                 attributes: [
-                    { name: 'videoId', type: 'string', size: 255, required: true },
-                    { name: 'title', type: 'string', size: 1000, required: true },
-                    { name: 'summary', type: 'string', size: 5000, required: true },
-                    { name: 'keyTakeaway', type: 'string', size: 2000, required: true },
-                    { name: 'keyPoints', type: 'string', size: 5000, required: true },
-                    { name: 'tags', type: 'string', size: 1000, required: false },
-                    { name: 'channelId', type: 'string', size: 255, required: false },
-                    { name: 'publishedAt', type: 'string', size: 50, required: false },
-                    { name: 'author', type: 'string', size: 255, required: false },
+                    // 标识字段 - 精简到实际需要的大小
+                    { name: 'videoId', type: 'string', size: 50, required: true },      // YouTube 11字符, Bilibili BV12字符
+                    { name: 'platform', type: 'string', size: 20, required: true },     // youtube/bilibili 最长8字符
+                    { name: 'channelId', type: 'string', size: 50, required: false },   // 频道ID
+                    
+                    // 元数据字段
+                    { name: 'title', type: 'string', size: 200, required: true },       // 代码限制100，留余量
+                    { name: 'author', type: 'string', size: 150, required: false },     // 代码限制100，留余量
+                    { name: 'publishedAt', type: 'string', size: 30, required: false }, // ISO日期格式
                     { name: 'hasSubtitles', type: 'boolean', required: false },
-                    { name: 'embedding', type: 'double', size: 0, required: false, array: true }
+                    
+                    // 原始视频描述 - 来自视频平台
+                    { name: 'description', type: 'string', size: 2000, required: false }, // 精简，通常不需要太长
+                    
+                    // 统计字段
+                    { name: 'hits', type: 'integer', required: false },                 // 访问次数
                 ],
                 indexes: [
                     { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] },
                     { key: 'channelId', type: 'key', attributes: ['channelId'] },
-                    { key: 'publishedAt', type: 'key', attributes: ['publishedAt'] }
+                    { key: 'publishedAt', type: 'key', attributes: ['publishedAt'] },
+                    { key: 'platform', type: 'key', attributes: ['platform'] }
+                ]
+            },
+            // 子表：video_summaries - 存储视频摘要内容
+            {
+                name: 'video_summaries',
+                attributes: [
+                    { name: 'videoId', type: 'string', size: 50, required: true },
+                    { name: 'platform', type: 'string', size: 20, required: true },
+                    { name: 'summary', type: 'string', size: 5000, required: true },    // 主摘要内容
+                ],
+                indexes: [
+                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
+                ]
+            },
+            // 子表：video_key_insights - 存储关键要点
+            {
+                name: 'video_key_insights',
+                attributes: [
+                    { name: 'videoId', type: 'string', size: 50, required: true },
+                    { name: 'platform', type: 'string', size: 20, required: true },
+                    { name: 'keyTakeaway', type: 'string', size: 600, required: true }, // 核心要点
+                    { name: 'keyPoints', type: 'string', size: 4000, required: true },  // JSON数组，每项200×15
+                    { name: 'coreTerms', type: 'string', size: 2000, required: false }, // JSON数组，每项100×15
+                ],
+                indexes: [
+                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
+                ]
+            },
+            // 子表：video_comments_analysis - 存储评论分析
+            {
+                name: 'video_comments_analysis',
+                attributes: [
+                    { name: 'videoId', type: 'string', size: 50, required: true },
+                    { name: 'platform', type: 'string', size: 20, required: true },
+                    { name: 'commentsSummary', type: 'string', size: 1000, required: false },   // 评论总结
+                    { name: 'commentsKeyPoints', type: 'string', size: 2000, required: false }, // 评论要点JSON数组
+                    { name: 'commentsCount', type: 'integer', required: false },                // 评论数量
+                ],
+                indexes: [
+                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
+                ]
+            },
+            // 子表：video_embeddings - 存储向量嵌入
+            {
+                name: 'video_embeddings',
+                attributes: [
+                    { name: 'videoId', type: 'string', size: 50, required: true },
+                    { name: 'platform', type: 'string', size: 20, required: true },
+                    { name: 'embedding', type: 'double', size: 0, required: false, array: true }, // 1536维向量
+                ],
+                indexes: [
+                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
                 ]
             },
             {
@@ -51,11 +116,13 @@ export const POST: RequestHandler = async () => {
                 name: 'transcripts',
                 attributes: [
                     { name: 'videoId', type: 'string', size: 255, required: true },
+                    { name: 'platform', type: 'string', size: 50, required: false },
                     { name: 'transcript', type: 'string', size: 50000, required: true },
                     { name: 'language', type: 'string', size: 10, required: false }
                 ],
                 indexes: [
-                    { key: 'videoId', type: 'unique', attributes: ['videoId'] }
+                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
+                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
                 ]
             },
             {

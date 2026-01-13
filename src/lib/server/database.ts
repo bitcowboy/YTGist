@@ -1,10 +1,36 @@
 import { databases } from './appwrite.js';
 import { ID, Query, Permission, Role } from 'node-appwrite';
-import type { SummaryData, BlockedChannel, FollowedChannel, Project, ProjectVideo, ProjectSummary, Collection, CollectionVideo, CollectionSummary, Cluster, VideoCluster, AppwriteDocument } from '$lib/types.js';
+import type { 
+    SummaryData, 
+    VideoSummaryContent, 
+    VideoKeyInsights, 
+    VideoCommentsAnalysis, 
+    VideoEmbedding,
+    FullSummaryData,
+    BlockedChannel, 
+    FollowedChannel, 
+    Project, 
+    ProjectVideo, 
+    ProjectSummary, 
+    Collection, 
+    CollectionVideo, 
+    CollectionSummary, 
+    Cluster, 
+    VideoCluster, 
+    AppwriteDocument, 
+    VideoPlatform 
+} from '$lib/types.js';
 
 // 数据库表名常量
 export const COLLECTIONS = {
-    SUMMARIES: 'summaries',
+    // 主表和分表
+    SUMMARIES: 'summaries',                      // 主表：视频基础信息和元数据
+    VIDEO_SUMMARIES: 'video_summaries',          // 子表：视频摘要内容
+    VIDEO_KEY_INSIGHTS: 'video_key_insights',    // 子表：关键要点
+    VIDEO_COMMENTS_ANALYSIS: 'video_comments_analysis', // 子表：评论分析
+    VIDEO_EMBEDDINGS: 'video_embeddings',        // 子表：向量嵌入
+    
+    // 其他表
     TRANSCRIPTS: 'transcripts',
     DAILY_SUMMARIES: 'daily-summaries',
     BLOCKED_CHANNELS: 'blocked_channels',
@@ -19,13 +45,18 @@ export const COLLECTIONS = {
     VIDEO_CLUSTERS: 'video_clusters'
 } as const;
 
-// Summary 相关操作
-export const getSummary = async (videoId: string): Promise<SummaryData | null> => {
+// ============ 分表操作 ============
+
+// 获取主表数据（仅基础信息和元数据）
+export const getSummary = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<SummaryData | null> => {
     try {
         const { documents } = await databases.listDocuments<SummaryData>(
             'main',
             COLLECTIONS.SUMMARIES,
-            [Query.equal('videoId', videoId)]
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('platform', platform)
+            ]
         );
         return documents.length > 0 ? documents[0] : null;
     } catch (error) {
@@ -34,6 +65,135 @@ export const getSummary = async (videoId: string): Promise<SummaryData | null> =
     }
 };
 
+// 获取视频摘要内容
+export const getVideoSummaryContent = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoSummaryContent | null> => {
+    try {
+        const { documents } = await databases.listDocuments<VideoSummaryContent>(
+            'main',
+            COLLECTIONS.VIDEO_SUMMARIES,
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('platform', platform)
+            ]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get video summary content:', error);
+        return null;
+    }
+};
+
+// 获取关键要点
+export const getVideoKeyInsights = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoKeyInsights | null> => {
+    try {
+        const { documents } = await databases.listDocuments<VideoKeyInsights>(
+            'main',
+            COLLECTIONS.VIDEO_KEY_INSIGHTS,
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('platform', platform)
+            ]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get video key insights:', error);
+        return null;
+    }
+};
+
+// 获取评论分析
+export const getVideoCommentsAnalysis = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoCommentsAnalysis | null> => {
+    try {
+        const { documents } = await databases.listDocuments<VideoCommentsAnalysis>(
+            'main',
+            COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('platform', platform)
+            ]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get video comments analysis:', error);
+        return null;
+    }
+};
+
+// 获取向量嵌入
+export const getVideoEmbedding = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoEmbedding | null> => {
+    try {
+        const { documents } = await databases.listDocuments<VideoEmbedding>(
+            'main',
+            COLLECTIONS.VIDEO_EMBEDDINGS,
+            [
+                Query.equal('videoId', videoId),
+                Query.equal('platform', platform)
+            ]
+        );
+        return documents.length > 0 ? documents[0] : null;
+    } catch (error) {
+        console.error('Failed to get video embedding:', error);
+        return null;
+    }
+};
+
+// 获取完整的视频摘要数据（从所有分表组合）
+export const getFullSummary = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<FullSummaryData | null> => {
+    try {
+        // 并行获取所有分表数据
+        const [summary, summaryContent, keyInsights, commentsAnalysis, embedding] = await Promise.all([
+            getSummary(videoId, platform),
+            getVideoSummaryContent(videoId, platform),
+            getVideoKeyInsights(videoId, platform),
+            getVideoCommentsAnalysis(videoId, platform),
+            getVideoEmbedding(videoId, platform)
+        ]);
+
+        // 如果主表数据不存在，返回null
+        if (!summary) {
+            return null;
+        }
+
+        // 解析 JSON 字符串回数组的辅助函数
+        const parseJsonArray = (jsonStr: string | string[] | undefined): string[] => {
+            if (!jsonStr) return [];
+            if (Array.isArray(jsonStr)) return jsonStr; // 如果已经是数组，直接返回
+            if (typeof jsonStr === 'string') {
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            }
+            return [];
+        };
+
+        // 组合完整数据（需要将 JSON 字符串解析回数组）
+        const fullData: FullSummaryData = {
+            ...summary,
+            // 来自 video_summaries 表
+            summary: summaryContent?.summary || '',
+            // 来自 video_key_insights 表
+            keyTakeaway: keyInsights?.keyTakeaway || '',
+            keyPoints: parseJsonArray(keyInsights?.keyPoints),
+            coreTerms: parseJsonArray(keyInsights?.coreTerms),
+            // 来自 video_comments_analysis 表
+            commentsSummary: commentsAnalysis?.commentsSummary,
+            commentsKeyPoints: parseJsonArray(commentsAnalysis?.commentsKeyPoints),
+            commentsCount: commentsAnalysis?.commentsCount,
+            // 来自 video_embeddings 表
+            embedding: embedding?.embedding
+        };
+
+        return fullData;
+    } catch (error) {
+        console.error('Failed to get full summary:', error);
+        return null;
+    }
+};
+
+// 创建完整的视频摘要数据（写入所有分表）
 export const createSummary = async (summaryData: {
     videoId: string;
     title: string;
@@ -46,45 +206,151 @@ export const createSummary = async (summaryData: {
     coreTerms: string[];
     hasSubtitles?: boolean;
     publishedAt?: string;
-}): Promise<SummaryData> => {
+    platform?: VideoPlatform;
+    commentsSummary?: string;
+    commentsKeyPoints?: string[];
+    commentsCount?: number;
+}): Promise<FullSummaryData> => {
     // Clamp fields to Appwrite attribute limits to avoid document_invalid_structure
+    // 字段大小限制与 init-database 中的定义保持一致
     const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
-    const safeKeyPoints = (summaryData.keyPoints || []).map((kp) => clamp(kp, 200)).slice(0, 50);
-    const safeCoreTerms = (summaryData.coreTerms || []).map((ct) => clamp(ct, 100)).slice(0, 50);
+    
+    // keyPoints: 数据库限制 4000，每项最多 200 字符，最多 15 项，存储为 JSON 字符串
+    const safeKeyPoints = JSON.stringify((summaryData.keyPoints || []).map((kp) => clamp(kp, 200)).slice(0, 15));
+    // coreTerms: 数据库限制 2000，每项最多 100 字符，最多 15 项，存储为 JSON 字符串
+    const safeCoreTerms = JSON.stringify((summaryData.coreTerms || []).map((ct) => clamp(ct, 100)).slice(0, 15));
+    // commentsKeyPoints: 数据库限制 2000，每项最多 150 字符，最多 10 项，存储为 JSON 字符串
+    const safeCommentsKeyPoints = JSON.stringify((summaryData.commentsKeyPoints || []).map((ckp) => clamp(ckp, 150)).slice(0, 10));
 
-    const payload = {
-        videoId: summaryData.videoId,
-        title: clamp(summaryData.title, 100),
-        description: clamp(summaryData.description, 5000),
-        author: clamp(summaryData.author, 100),
-        channelId: summaryData.channelId,
-        summary: clamp(summaryData.summary, 5000),
-        keyTakeaway: clamp(summaryData.keyTakeaway, 500),
-        keyPoints: safeKeyPoints,
-        coreTerms: safeCoreTerms,
-        hasSubtitles: summaryData.hasSubtitles,
+    const videoId = clamp(summaryData.videoId, 50);
+    const platform = summaryData.platform || 'youtube';
+
+    // 1. 创建主表数据
+    const mainPayload = {
+        videoId,
+        platform,
+        channelId: clamp(summaryData.channelId, 50),
+        title: clamp(summaryData.title, 200),
+        author: clamp(summaryData.author, 150),
         publishedAt: summaryData.publishedAt,
+        hasSubtitles: summaryData.hasSubtitles,
+        description: clamp(summaryData.description, 2000),
         hits: 0
-    } as any;
+    };
 
-    return await databases.createDocument<SummaryData>(
+    const mainDoc = await databases.createDocument<SummaryData>(
         'main',
         COLLECTIONS.SUMMARIES,
         ID.unique(),
-        payload
+        mainPayload
     );
+
+    // 2. 创建摘要内容子表数据
+    const summaryContentPayload = {
+        videoId,
+        platform,
+        summary: clamp(summaryData.summary, 5000)
+    };
+
+    await databases.createDocument<VideoSummaryContent>(
+        'main',
+        COLLECTIONS.VIDEO_SUMMARIES,
+        ID.unique(),
+        summaryContentPayload
+    );
+
+    // 3. 创建关键要点子表数据
+    const keyInsightsPayload = {
+        videoId,
+        platform,
+        keyTakeaway: clamp(summaryData.keyTakeaway, 600),
+        keyPoints: safeKeyPoints,
+        coreTerms: safeCoreTerms
+    };
+
+    await databases.createDocument<VideoKeyInsights>(
+        'main',
+        COLLECTIONS.VIDEO_KEY_INSIGHTS,
+        ID.unique(),
+        keyInsightsPayload as any  // 使用类型断言，因为数据库存储为 JSON 字符串
+    );
+
+    // 4. 创建评论分析子表数据
+    const commentsPayload = {
+        videoId,
+        platform,
+        commentsSummary: clamp(summaryData.commentsSummary, 1000),
+        commentsKeyPoints: safeCommentsKeyPoints,
+        commentsCount: summaryData.commentsCount || 0
+    };
+
+    await databases.createDocument<VideoCommentsAnalysis>(
+        'main',
+        COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
+        ID.unique(),
+        commentsPayload as any  // 使用类型断言，因为数据库存储为 JSON 字符串
+    );
+
+    // 解析 JSON 字符串回数组的辅助函数
+    const parseJsonArray = (jsonStr: string): string[] => {
+        try {
+            const parsed = JSON.parse(jsonStr);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    };
+
+    // 返回组合后的完整数据（需要将 JSON 字符串解析回数组）
+    return {
+        ...mainDoc,
+        summary: summaryContentPayload.summary,
+        keyTakeaway: keyInsightsPayload.keyTakeaway,
+        keyPoints: parseJsonArray(keyInsightsPayload.keyPoints),
+        coreTerms: parseJsonArray(keyInsightsPayload.coreTerms),
+        commentsSummary: commentsPayload.commentsSummary,
+        commentsKeyPoints: parseJsonArray(commentsPayload.commentsKeyPoints),
+        commentsCount: commentsPayload.commentsCount
+    };
 };
 
-export const updateSummary = async (videoId: string, updateData: Partial<{
+// 创建或更新向量嵌入
+export const upsertVideoEmbedding = async (videoId: string, platform: VideoPlatform, embedding: number[]): Promise<VideoEmbedding> => {
+    try {
+        const existing = await getVideoEmbedding(videoId, platform);
+        
+        if (existing) {
+            return await databases.updateDocument<VideoEmbedding>(
+                'main',
+                COLLECTIONS.VIDEO_EMBEDDINGS,
+                existing.$id,
+                { embedding }
+            );
+        }
+
+        return await databases.createDocument<VideoEmbedding>(
+            'main',
+            COLLECTIONS.VIDEO_EMBEDDINGS,
+            ID.unique(),
+            { videoId, platform, embedding }
+        );
+    } catch (error) {
+        console.error('Failed to upsert video embedding:', error);
+        throw error;
+    }
+};
+
+// 更新主表数据
+export const updateSummary = async (videoId: string, platform: VideoPlatform = 'youtube', updateData: Partial<{
     title: string;
-    summary: string;
-    keyTakeaway: string;
-    keyPoints: string[];
-    coreTerms: string[];
     hasSubtitles: boolean;
     hits: number;
+    description: string;
+    author: string;
+    channelId: string;
+    publishedAt: string;
 }>): Promise<SummaryData> => {
-    const existing = await getSummary(videoId);
+    const existing = await getSummary(videoId, platform);
     if (!existing) {
         throw new Error('Summary not found');
     }
@@ -97,8 +363,94 @@ export const updateSummary = async (videoId: string, updateData: Partial<{
     );
 };
 
-export const incrementSummaryHits = async (videoId: string): Promise<SummaryData> => {
-    const existing = await getSummary(videoId);
+// 更新视频摘要内容
+export const updateVideoSummaryContent = async (videoId: string, platform: VideoPlatform = 'youtube', summary: string): Promise<VideoSummaryContent> => {
+    const existing = await getVideoSummaryContent(videoId, platform);
+    if (!existing) {
+        // 如果不存在则创建
+        return await databases.createDocument<VideoSummaryContent>(
+            'main',
+            COLLECTIONS.VIDEO_SUMMARIES,
+            ID.unique(),
+            { videoId, platform, summary: summary.slice(0, 5000) }
+        );
+    }
+    
+    return await databases.updateDocument<VideoSummaryContent>(
+        'main',
+        COLLECTIONS.VIDEO_SUMMARIES,
+        existing.$id,
+        { summary: summary.slice(0, 5000) }
+    );
+};
+
+// 更新关键要点
+export const updateVideoKeyInsights = async (videoId: string, platform: VideoPlatform = 'youtube', updateData: Partial<{
+    keyTakeaway: string;
+    keyPoints: string[];
+    coreTerms: string[];
+}>): Promise<VideoKeyInsights> => {
+    const existing = await getVideoKeyInsights(videoId, platform);
+    
+    const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
+    const payload: any = {};
+    if (updateData.keyTakeaway !== undefined) payload.keyTakeaway = clamp(updateData.keyTakeaway, 600);
+    // keyPoints 和 coreTerms 需要存储为 JSON 字符串
+    if (updateData.keyPoints !== undefined) payload.keyPoints = JSON.stringify(updateData.keyPoints.map(kp => clamp(kp, 200)).slice(0, 15));
+    if (updateData.coreTerms !== undefined) payload.coreTerms = JSON.stringify(updateData.coreTerms.map(ct => clamp(ct, 100)).slice(0, 15));
+    
+    if (!existing) {
+        // 如果不存在则创建
+        return await databases.createDocument<VideoKeyInsights>(
+            'main',
+            COLLECTIONS.VIDEO_KEY_INSIGHTS,
+            ID.unique(),
+            { videoId, platform, ...payload }
+        );
+    }
+    
+    return await databases.updateDocument<VideoKeyInsights>(
+        'main',
+        COLLECTIONS.VIDEO_KEY_INSIGHTS,
+        existing.$id,
+        payload
+    );
+};
+
+// 更新评论分析
+export const updateVideoCommentsAnalysis = async (videoId: string, platform: VideoPlatform = 'youtube', updateData: Partial<{
+    commentsSummary: string;
+    commentsKeyPoints: string[];
+    commentsCount: number;
+}>): Promise<VideoCommentsAnalysis> => {
+    const existing = await getVideoCommentsAnalysis(videoId, platform);
+    
+    const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
+    const payload: any = {};
+    if (updateData.commentsSummary !== undefined) payload.commentsSummary = clamp(updateData.commentsSummary, 1000);
+    if (updateData.commentsKeyPoints !== undefined) payload.commentsKeyPoints = updateData.commentsKeyPoints.map(ckp => clamp(ckp, 150)).slice(0, 10);
+    if (updateData.commentsCount !== undefined) payload.commentsCount = updateData.commentsCount;
+    
+    if (!existing) {
+        // 如果不存在则创建
+        return await databases.createDocument<VideoCommentsAnalysis>(
+            'main',
+            COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
+            ID.unique(),
+            { videoId, platform, ...payload }
+        );
+    }
+    
+    return await databases.updateDocument<VideoCommentsAnalysis>(
+        'main',
+        COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
+        existing.$id,
+        payload
+    );
+};
+
+export const incrementSummaryHits = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<SummaryData> => {
+    const existing = await getSummary(videoId, platform);
     if (!existing) {
         throw new Error('Summary not found');
     }
@@ -1351,10 +1703,10 @@ export const checkCollectionSummaryCacheValidity = async (collectionId: string, 
 // Cluster 相关操作
 export const getAllSummariesWithEmbeddings = async (): Promise<Array<{ videoId: string; embedding: number[]; title: string; summary: string }>> => {
     try {
-        // Use pagination to avoid timeout when fetching large datasets
-        const allDocuments: SummaryData[] = [];
+        // 从 video_embeddings 表获取所有有嵌入的视频
+        const allEmbeddings: VideoEmbedding[] = [];
         let lastId: string | undefined = undefined;
-        const pageSize = 100; // Fetch in smaller batches
+        const pageSize = 100;
         
         let pageCount = 0;
         while (true) {
@@ -1364,70 +1716,80 @@ export const getAllSummariesWithEmbeddings = async (): Promise<Array<{ videoId: 
             }
             
             pageCount++;
-            console.log(`[getAllSummariesWithEmbeddings] Fetching page ${pageCount}...`);
+            console.log(`[getAllSummariesWithEmbeddings] Fetching embeddings page ${pageCount}...`);
             
-            const { documents, total } = await databases.listDocuments<SummaryData>(
+            const { documents, total } = await databases.listDocuments<VideoEmbedding>(
                 'main',
-                COLLECTIONS.SUMMARIES,
+                COLLECTIONS.VIDEO_EMBEDDINGS,
                 queries
             );
             
-            allDocuments.push(...documents);
-            console.log(`[getAllSummariesWithEmbeddings] Page ${pageCount}: fetched ${documents.length} documents (total: ${allDocuments.length}/${total})`);
+            allEmbeddings.push(...documents);
+            console.log(`[getAllSummariesWithEmbeddings] Page ${pageCount}: fetched ${documents.length} embeddings (total: ${allEmbeddings.length}/${total})`);
             
-            // Check if we've fetched all documents
-            if (documents.length < pageSize || allDocuments.length >= total) {
+            if (documents.length < pageSize || allEmbeddings.length >= total) {
                 break;
             }
             
             lastId = documents[documents.length - 1].$id;
-            
-            // Add a small delay between pages to avoid overwhelming the API
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         
-        console.log(`[getAllSummariesWithEmbeddings] Fetched ${allDocuments.length} total summaries in ${pageCount} pages`);
+        console.log(`[getAllSummariesWithEmbeddings] Fetched ${allEmbeddings.length} total embeddings in ${pageCount} pages`);
         
-        return allDocuments
-            .filter(doc => {
-                const emb: any = doc.embedding;
-                if (emb === null || emb === undefined) return false;
-                if (typeof emb === 'string') {
-                    return emb.trim() !== '';
+        // 过滤有效的嵌入
+        const validEmbeddings = allEmbeddings.filter(doc => {
+            const emb: any = doc.embedding;
+            if (emb === null || emb === undefined) return false;
+            if (typeof emb === 'string') {
+                return emb.trim() !== '';
+            }
+            if (Array.isArray(emb)) {
+                return emb.length > 0;
+            }
+            return false;
+        });
+
+        // 获取对应的标题和摘要
+        const results: Array<{ videoId: string; embedding: number[]; title: string; summary: string }> = [];
+        
+        for (const embDoc of validEmbeddings) {
+            let embedding: number[] = [];
+            if (typeof embDoc.embedding === 'string') {
+                try {
+                    embedding = JSON.parse(embDoc.embedding as any);
+                } catch (e) {
+                    console.warn(`Failed to parse embedding for video ${embDoc.videoId}:`, e);
+                    continue;
                 }
-                if (Array.isArray(emb)) {
-                    return emb.length > 0;
-                }
-                return false;
-            })
-            .map(doc => {
-                let embedding: number[] = [];
-                if (typeof doc.embedding === 'string') {
-                    try {
-                        embedding = JSON.parse(doc.embedding);
-                    } catch (e) {
-                        console.warn(`Failed to parse embedding for video ${doc.videoId}:`, e);
-                        return null;
-                    }
-                } else if (Array.isArray(doc.embedding)) {
-                    embedding = doc.embedding;
-                }
-                
-                if (embedding.length === 0) {
-                    return null;
-                }
-                
-                return {
-                    videoId: doc.videoId,
+            } else if (Array.isArray(embDoc.embedding)) {
+                embedding = embDoc.embedding;
+            }
+            
+            if (embedding.length === 0) {
+                continue;
+            }
+            
+            // 获取主表和摘要内容
+            const [mainDoc, summaryContent] = await Promise.all([
+                getSummary(embDoc.videoId, embDoc.platform),
+                getVideoSummaryContent(embDoc.videoId, embDoc.platform)
+            ]);
+            
+            if (mainDoc && summaryContent) {
+                results.push({
+                    videoId: embDoc.videoId,
                     embedding,
-                    title: doc.title,
-                    summary: doc.summary
-                };
-            })
-            .filter((item): item is { videoId: string; embedding: number[]; title: string; summary: string } => item !== null);
+                    title: mainDoc.title,
+                    summary: summaryContent.summary
+                });
+            }
+        }
+        
+        return results;
     } catch (error) {
         console.error('Failed to get summaries with embeddings:', error);
-        throw error; // Re-throw to let caller handle it
+        throw error;
     }
 };
 

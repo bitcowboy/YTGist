@@ -1,17 +1,10 @@
-import { OPENAI_API_KEY, PROXY_URI } from '$env/static/private';
+import { OPENAI_API_KEY } from '$env/static/private';
 import OpenAI from 'openai';
-import * as undici from 'undici';
-
-// Only create proxy agent if PROXY_URI is available
-const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
 
 // Create OpenAI client directly (not through OpenRouter) for embedding generation
 // DeepSeek and other models via OpenRouter don't support embeddings
 const openai = new OpenAI({
 	apiKey: OPENAI_API_KEY,
-	fetchOptions: {
-		dispatcher: proxyAgent ? proxyAgent : undefined,
-	},
 });
 
 // Default embedding dimensions (can be overridden via parameter)

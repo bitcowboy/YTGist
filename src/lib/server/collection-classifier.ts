@@ -2,8 +2,8 @@ import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } 
 import OpenAI from 'openai';
 import * as undici from 'undici';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
-import { getSummary, getCollections, getOrCreateDefaultCollection } from './database.js';
-import type { SummaryData, Collection } from '$lib/types.js';
+import { getFullSummary, getCollections, getOrCreateDefaultCollection } from './database.js';
+import type { FullSummaryData, Collection } from '$lib/types.js';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
@@ -53,8 +53,8 @@ const systemPrompt = `你是一个智能视频分类助手。你的任务是根�
  */
 export async function classifyVideo(videoId: string): Promise<string[]> {
 	try {
-		// Get video summary data
-		const summaryData = await getSummary(videoId);
+		// Get video summary data (using full summary from split tables)
+		const summaryData = await getFullSummary(videoId);
 		if (!summaryData) {
 			console.warn(`No summary found for video ${videoId}, using default collection`);
 			const defaultCollection = await getOrCreateDefaultCollection();

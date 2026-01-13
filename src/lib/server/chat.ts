@@ -1,6 +1,6 @@
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
-import type { SummaryData, ChatMessage } from '$lib/types';
+import type { FullSummaryData, ChatMessage } from '$lib/types';
 import * as undici from 'undici';
 import { getTranscriptByVideoId } from './database.js';
 
@@ -61,7 +61,7 @@ export const generateChatResponse = async (
 	userMessage: string,
 	videoId: string,
 	videoTitle: string,
-	summaryData: SummaryData,
+	summaryData: FullSummaryData,
 	conversationHistory?: ChatMessage[]
 ): Promise<string> => {
 	try {
@@ -157,7 +157,7 @@ export const generateChatResponseStream = async (
 	userMessage: string,
 	videoId: string,
 	videoTitle: string,
-	summaryData: SummaryData,
+	summaryData: FullSummaryData,
 	conversationHistory?: ChatMessage[],
 	emitters: ChatStreamEmitters = {}
 ): Promise<string> => {

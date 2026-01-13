@@ -1,9 +1,9 @@
 <script lang="ts">
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import type { SummaryData } from '$lib/types';
+	import type { FullSummaryData } from '$lib/types';
 	import { marked } from 'marked';
 
-	let { summaryData }: { summaryData: SummaryData } = $props();
+	let { summaryData }: { summaryData: FullSummaryData } = $props();
 
 	let keyTakeawayHtml = $derived(marked.parse(summaryData.keyTakeaway));
 </script>

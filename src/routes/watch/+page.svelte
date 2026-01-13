@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-	import type { SummaryData } from '$lib/types';
+	import type { FullSummaryData } from '$lib/types';
 	import { fetchWithNonce } from '$lib/client/nonce';
 
 	import Tags from '$lib/components/summary/tags.svelte';
@@ -23,11 +23,22 @@ import { openSummaryStream } from '$lib/client/summary-stream';
 
 	const { data } = $props();
 
-	let summaryData = $state<SummaryData | null>(data.summaryData);
+	let summaryData = $state<FullSummaryData | null>(data.summaryData);
 	let error = $state<string | null>(null);
 	let isNoSubtitlesError = $state<boolean>(false);
 	let videoTitle = $state<string | null>(null);
 	let videoId = $state<string | null>(null);
+	let platform = $state<string>((data as any).platform || 'youtube');
+
+	// 辅助函数：构建带platform参数的API URL
+	const buildApiUrl = (endpoint: string, videoId: string, platform: string = 'youtube') => {
+		const url = new URL(endpoint, window.location.origin);
+		url.searchParams.set('v', videoId);
+		if (platform !== 'youtube') {
+			url.searchParams.set('platform', platform);
+		}
+		return url.toString();
+	};
 
     let loading = $derived(!summaryData && !error);
     // Pure server-driven per-char streaming display
@@ -67,18 +78,22 @@ onMount(() => {
 
 
     if (!summaryData) {
-			const urlVideoId = new URLSearchParams(window.location.search).get('v');
+			const urlParams = new URLSearchParams(window.location.search);
+			const urlVideoId = urlParams.get('v');
+			const urlPlatform = urlParams.get('platform') || 'youtube';
+			const urlSubtitleUrl = urlParams.get('subtitle_url') || undefined;
 			if (!urlVideoId) {
 				error = 'No video ID found in the URL. Please make sure the URL is correct.';
 				return;
 			}
 			
-			// Store videoId for use in components
+			// Store videoId and platform for use in components
 			videoId = urlVideoId;
+			platform = urlPlatform;
 
             // 使用SSE进行流式获取
             (async () => {
-            streamController = await openSummaryStream(urlVideoId, {
+            streamController = await openSummaryStream(urlVideoId, urlPlatform as any, {
                 onDelta: (delta) => {
                     if (streamFinalized) return;
                     streamingText += delta;
@@ -172,7 +187,7 @@ onMount(() => {
                         error = 'CHANNEL_BLOCKED';
                         videoId = urlVideoId;
                         try {
-                            const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
+                            const videoDataRes = await fetch(buildApiUrl('/api/get-video-data', urlVideoId, urlPlatform));
                             if (videoDataRes.ok) {
                                 const videoData = await videoDataRes.json();
                                 videoTitle = videoData.title;
@@ -189,7 +204,7 @@ onMount(() => {
                         isNoSubtitlesError = true;
                         error = 'NO_SUBTITLES_AVAILABLE';
                         try {
-                            const videoDataRes = await fetch(`/api/get-video-data?v=${urlVideoId}`);
+                            const videoDataRes = await fetch(buildApiUrl('/api/get-video-data', urlVideoId, urlPlatform));
                             if (videoDataRes.ok) {
                                 const videoData = await videoDataRes.json();
                                 videoTitle = videoData.title;
@@ -211,10 +226,10 @@ onMount(() => {
                     isNoSubtitlesError = false;
                     window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
                 }
-            });
+            }, urlSubtitleUrl);
             })();
             /* Previous non-streaming fallback retained (commented for reference)
-            fetchWithNonce(`/api/get-summary?v=${urlVideoId}`)
+            fetchWithNonce(buildApiUrl('/api/get-summary', urlVideoId, urlPlatform))
                 .then(async (res) => {
                     if (!res.ok) {
 						// Try to get a more specific error message from the API response
@@ -331,7 +346,7 @@ onMount(() => {
 						error = 'CHANNEL_BLOCKED';
 						videoId = urlVideoId;
 						// Try to get video data for better UX
-						fetch(`/api/get-video-data?v=${urlVideoId}`)
+						fetch(buildApiUrl('/api/get-video-data', urlVideoId, urlPlatform))
 							.then(videoDataRes => {
 								if (videoDataRes.ok) {
 									return videoDataRes.json();

@@ -1,11 +1,11 @@
 import { fetchNonce } from '$lib/client/nonce';
-import type { SummaryData } from '$lib/types';
+import type { FullSummaryData, VideoPlatform } from '$lib/types';
 
 export type SummaryStreamHandlers = {
 	onDelta?: (delta: string) => void;
 	onComplete?: (fullSummary: string) => void;
-	onFinal?: (payload: SummaryData) => void;
-	onPartial?: (partial: Partial<SummaryData>) => void;
+	onFinal?: (payload: FullSummaryData) => void;
+	onPartial?: (partial: Partial<FullSummaryData>) => void;
 	onError?: (message: string) => void;
 };
 
@@ -23,11 +23,19 @@ const safeParse = <T>(value: string): T | null => {
 
 export const openSummaryStream = async (
 	videoId: string,
-	handlers: SummaryStreamHandlers = {}
+	platform: VideoPlatform = 'youtube',
+	handlers: SummaryStreamHandlers = {},
+	subtitleUrl?: string
 ): Promise<SummaryStreamController> => {
 	const nonce = await fetchNonce();
 	const url = new URL('/api/get-summary', window.location.origin);
 	url.searchParams.set('v', videoId);
+	if (platform !== 'youtube') {
+		url.searchParams.set('platform', platform);
+	}
+	if (subtitleUrl) {
+		url.searchParams.set('subtitle_url', subtitleUrl);
+	}
 	url.searchParams.set('nonce', nonce);
 
 	const source = new EventSource(url.toString());
@@ -54,7 +62,7 @@ export const openSummaryStream = async (
 
 	source.addEventListener('summary-final', (event) => {
 		const message = event as MessageEvent;
-		const payload = safeParse<SummaryData>(message.data ?? '');
+		const payload = safeParse<FullSummaryData>(message.data ?? '');
 		if (payload) {
 			handlers.onFinal?.(payload);
 		}
@@ -64,7 +72,7 @@ export const openSummaryStream = async (
 	// Optional partial updates
 	source.addEventListener('summary-partial', (event) => {
 		const message = event as MessageEvent;
-		const payload = safeParse<Partial<SummaryData>>(message.data ?? '');
+		const payload = safeParse<Partial<FullSummaryData>>(message.data ?? '');
 		if (payload) {
 			handlers.onPartial?.(payload);
 		}

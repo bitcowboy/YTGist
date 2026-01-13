@@ -4,19 +4,27 @@
 	import ZapIcon from '@lucide/svelte/icons/zap';
 	import LightbulbIcon from '@lucide/svelte/icons/lightbulb';
 	import { goto } from '$app/navigation';
-	import { extractVideoId } from '$lib/utils';
+	import { extractVideoInfo } from '$lib/utils';
 
-	let youtubeUrl = $state('');
+	let videoUrl = $state('');
 
-	let isValidUrl = $derived(youtubeUrl.trim() !== '' && extractVideoId(youtubeUrl) !== null);
+	let isValidUrl = $derived(() => {
+		if (!videoUrl.trim()) return false;
+		const info = extractVideoInfo(videoUrl);
+		return info !== null;
+	});
 
 	const handleSubmit = (e: Event) => {
 		e.preventDefault();
-		const videoId = extractVideoId(youtubeUrl);
-		if (videoId) {
-			goto(`watch?v=${videoId}`);
+		const info = extractVideoInfo(videoUrl);
+		if (info) {
+			const params = new URLSearchParams({ v: info.videoId });
+			if (info.platform !== 'youtube') {
+				params.set('platform', info.platform);
+			}
+			goto(`watch?${params.toString()}`);
 		} else {
-			alert('Please enter a valid YouTube URL');
+			alert('请输入有效的视频URL（支持YouTube和B站）');
 		}
 	};
 </script>
@@ -49,8 +57,8 @@
 				</div>
 				<input
 					type="url"
-					bind:value={youtubeUrl}
-					placeholder="Paste your YouTube URL here..."
+					bind:value={videoUrl}
+					placeholder="粘贴视频URL（支持YouTube和B站）..."
 					class="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-4 pr-18 pl-12 text-zinc-100 placeholder-zinc-500 transition-all duration-200 hover:border-zinc-600 focus:border-transparent focus:ring-2 focus:ring-red-500 focus:outline-none md:pr-44"
 				/>
 				<button
@@ -77,12 +85,11 @@
 				<LightbulbIcon class="h-5 w-5 text-yellow-400" />
 			</div>
 			<p class="text-sm">
-				For quick access, just add
+				快速访问：在视频URL中的"youtube"后添加
 				<code
 					class="mx-0.5 rounded border border-zinc-600 bg-zinc-700 px-1.5 py-1 font-mono text-sm leading-loose font-medium whitespace-nowrap text-red-300"
 					>gist</code
-				>
-				after "youtube" in any video URL.
+				>，或直接粘贴B站视频链接。
 			</p>
 		</div>
 	</div>

@@ -1,6 +1,6 @@
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
 import OpenAI from 'openai';
-import type { SummaryData } from '$lib/types.js';
+import type { FullSummaryData } from '$lib/types.js';
 import * as undici from 'undici';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
@@ -69,7 +69,7 @@ const dailySummarySchema = {
 	additionalProperties: false,
 };
 
-export const generateDailySummary = async (summaries: SummaryData[]) => {
+export const generateDailySummary = async (summaries: FullSummaryData[]) => {
 	try {
 		if (!summaries || summaries.length === 0) {
 			return {
@@ -80,7 +80,7 @@ export const generateDailySummary = async (summaries: SummaryData[]) => {
 		}
 
 		// Prepare data for AI analysis
-		const videoData = summaries.map((summary: SummaryData) => ({
+		const videoData = summaries.map((summary: FullSummaryData) => ({
 			title: summary.title,
 			keyTakeaway: summary.keyTakeaway,
 			summary: summary.summary,

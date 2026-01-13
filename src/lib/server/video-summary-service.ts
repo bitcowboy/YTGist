@@ -1,20 +1,78 @@
 import { databases } from '$lib/server/appwrite.js';
-import { upsertTranscript, isChannelBlocked } from '$lib/server/database.js';
+import { 
+    upsertTranscript, 
+    isChannelBlocked, 
+    COLLECTIONS,
+    getSummary as getMainSummary,
+    getVideoSummaryContent,
+    getVideoKeyInsights,
+    getVideoCommentsAnalysis,
+    getFullSummary,
+    upsertVideoEmbedding
+} from '$lib/server/database.js';
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData } from '$lib/server/videoData.js';
 import { generateEmbedding } from '$lib/server/embedding.js';
-import type { SummaryData } from '$lib/types.js';
+import type { SummaryData, FullSummaryData, VideoPlatform, VideoSummaryContent, VideoKeyInsights, VideoCommentsAnalysis } from '$lib/types.js';
 import { ID, Query } from 'node-appwrite';
 import OpenAI from 'openai';
-import * as undici from 'undici';
-import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
+import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL } from '$env/static/private';
 import prompt from '$lib/server/prompt.md?raw';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 import StreamJson from 'stream-json';
 
+/**
+ * 打印数据库集合的实际结构
+ */
+async function printDatabaseStructure(collectionName: string = 'summaries') {
+    try {
+        const collections = await databases.listCollections('main');
+        const collection = collections.collections.find(c => c.name === collectionName);
+        
+        if (!collection) {
+            console.log(`[DB Structure] Collection '${collectionName}' not found`);
+            return;
+        }
+        
+        const attributes = await databases.listAttributes('main', collection.$id);
+        
+        console.log(`\n📋 [DB Structure] Collection '${collectionName}' (ID: ${collection.$id})`);
+        console.log('='.repeat(80));
+        console.log('Attributes:');
+        
+        const attrList = attributes.attributes.map((attr: any) => {
+            const info: any = {
+                key: attr.key,
+                type: attr.type,
+                size: attr.size || attr.maxLength || 'N/A',
+                required: attr.required || false,
+                array: attr.array || false
+            };
+            return info;
+        });
+        
+        // 按字段名排序
+        attrList.sort((a: any, b: any) => a.key.localeCompare(b.key));
+        
+        attrList.forEach((attr: any) => {
+            const required = attr.required ? '✓' : '✗';
+            const array = attr.array ? '[array]' : '';
+            console.log(`  ${required} ${attr.key.padEnd(25)} | ${attr.type.padEnd(10)} | size: ${String(attr.size).padStart(6)} ${array}`);
+        });
+        
+        console.log('='.repeat(80));
+        console.log(`Total attributes: ${attrList.length}\n`);
+        
+        return attrList;
+    } catch (error) {
+        console.error(`[DB Structure] Failed to print structure:`, error);
+        return null;
+    }
+}
+
 export interface VideoSummaryResult {
     success: boolean;
-    summaryData?: SummaryData;
+    summaryData?: FullSummaryData;
     error?: string;
     errorType?: 'CHANNEL_BLOCKED' | 'NO_SUBTITLES' | 'PROCESSING_ERROR';
 }
@@ -23,14 +81,14 @@ export interface VideoSummaryResult {
  * 统一的视频总结生成服务
  * 所有视频总结都包含：频道检查、字幕保存、评论总结
  */
-export const generateVideoSummary = async (videoId: string): Promise<VideoSummaryResult> => {
+export const generateVideoSummary = async (videoId: string, platform: VideoPlatform = 'youtube', subtitleUrl?: string): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
-        console.log(`[video-summary] 🚀 Starting unified summary generation for video ${videoId}`);
+        console.log(`[video-summary] 🚀 Starting unified summary generation for video ${videoId} platform=${platform}${subtitleUrl ? ' with subtitleUrl' : ''}`);
         
         // 1. 获取视频数据（包含评论数据）
         const step1Start = Date.now();
-        const videoData = await getVideoData(videoId);
+        const videoData = await getVideoData(videoId, platform, subtitleUrl);
         const step1Time = Date.now() - step1Start;
         console.log(`📊 Video ${videoId} - Step 1 (Get video data): ${step1Time}ms`, { 
             channelId: videoData.channelId, 
@@ -78,82 +136,185 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
             console.warn(`Failed to save transcript: ${e} (${step4Time}ms)`); 
         }
 
-        // 5. 准备数据库数据
+        // 5. 准备数据库数据（分表结构）
         const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
+        
+        // 确保数组序列化后不超过指定大小，并返回 JSON 字符串（数据库存储格式）
+        const limitArraySize = (arr: string[], maxSize: number): string => {
+            if (!arr || arr.length === 0) return '[]';
+            let result: string[] = [];
+            for (const item of arr) {
+                const testResult = [...result, item];
+                const jsonSize = JSON.stringify(testResult).length;
+                if (jsonSize <= maxSize) {
+                    result.push(item);
+                } else {
+                    break;
+                }
+            }
+            return JSON.stringify(result);
+        };
+        
+        // 解析 JSON 字符串回数组（用于返回数据）
+        const parseJsonArray = (jsonStr: string | string[]): string[] => {
+            if (Array.isArray(jsonStr)) return jsonStr; // 如果已经是数组，直接返回
+            if (typeof jsonStr === 'string') {
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            }
+            return [];
+        };
 
-        const summaryData = {
-            videoId,
-            title: clamp(videoData.title, 100),
-            description: clamp(videoData.description, 5000),
-            author: clamp(videoData.author, 100),
-            channelId: videoData.channelId,
-            summary: clamp(summaryResult.summary, 5000),
-            keyTakeaway: clamp(summaryResult.keyTakeaway, 500),
-            keyPoints: summaryResult.keyPoints,
-            coreTerms: summaryResult.coreTerms,
-            hasSubtitles: videoData.hasSubtitles,
+        const safeVideoId = clamp(videoId, 50);
+
+        // 主表数据
+        const mainData = {
+            videoId: safeVideoId,
+            platform: platform,
+            channelId: clamp(videoData.channelId, 50),
+            title: clamp(videoData.title, 200),
+            author: clamp(videoData.author, 150),
             publishedAt: videoData.publishedAt,
-            hits: 0,
-            // 统一生成的评论总结
+            hasSubtitles: videoData.hasSubtitles,
+            description: clamp(videoData.description, 2000),
+            hits: 0
+        };
+
+        // 摘要内容子表数据
+        const summaryContentData = {
+            videoId: safeVideoId,
+            platform: platform,
+            summary: clamp(summaryResult.summary, 5000)
+        };
+
+        // 关键要点子表数据（keyPoints 和 coreTerms 需要存储为 JSON 字符串）
+        const keyInsightsData = {
+            videoId: safeVideoId,
+            platform: platform,
+            keyTakeaway: clamp(summaryResult.keyTakeaway, 600),
+            keyPoints: limitArraySize(summaryResult.keyPoints || [], 4000), // JSON 字符串
+            coreTerms: limitArraySize(summaryResult.coreTerms || [], 2000)  // JSON 字符串
+        };
+
+        // 评论分析子表数据（commentsKeyPoints 需要存储为 JSON 字符串）
+        const commentsData = {
+            videoId: safeVideoId,
+            platform: platform,
             commentsSummary: clamp(summaryResult.commentsSummary || '', 1000),
-            commentsKeyPoints: summaryResult.commentsKeyPoints || [],
+            commentsKeyPoints: limitArraySize(summaryResult.commentsKeyPoints || [], 2000), // JSON 字符串
             commentsCount: videoData.commentsCount || 0
         };
 
-        // 6. 保存到数据库（upsert逻辑）
+        // 6. 保存到数据库（分表upsert逻辑）
         const step5Start = Date.now();
-        const existing = await databases.listDocuments<SummaryData>('main', 'summaries', [
-            Query.equal('videoId', videoId),
-            Query.limit(1)
+        await printDatabaseStructure('summaries');
+
+        // 检查各表是否已存在数据
+        const [existingMain, existingSummary, existingInsights, existingComments] = await Promise.all([
+            databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoSummaryContent>('main', COLLECTIONS.VIDEO_SUMMARIES, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoKeyInsights>('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoCommentsAnalysis>('main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ])
         ]);
 
-        let finalSummaryData: SummaryData;
-        if (existing.total > 0) {
-            const doc = existing.documents[0];
-            finalSummaryData = await databases.updateDocument<SummaryData>(
-                'main', 
-                'summaries', 
-                doc.$id, 
-                summaryData
+        let mainDoc: SummaryData;
+
+        // 保存主表
+        if (existingMain.total > 0) {
+            mainDoc = await databases.updateDocument<SummaryData>(
+                'main', COLLECTIONS.SUMMARIES, existingMain.documents[0].$id, mainData
             );
         } else {
-            finalSummaryData = await databases.createDocument<SummaryData>(
-                'main',
-                'summaries',
-                ID.unique(),
-                summaryData
+            mainDoc = await databases.createDocument<SummaryData>(
+                'main', COLLECTIONS.SUMMARIES, ID.unique(), mainData
             );
         }
+
+        // 保存摘要内容子表
+        if (existingSummary.total > 0) {
+            await databases.updateDocument<VideoSummaryContent>(
+                'main', COLLECTIONS.VIDEO_SUMMARIES, existingSummary.documents[0].$id, summaryContentData
+            );
+        } else {
+            await databases.createDocument<VideoSummaryContent>(
+                'main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), summaryContentData
+            );
+        }
+
+        // 保存关键要点子表
+        if (existingInsights.total > 0) {
+            await databases.updateDocument<VideoKeyInsights>(
+                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, existingInsights.documents[0].$id, keyInsightsData as any
+            );
+        } else {
+            await databases.createDocument<VideoKeyInsights>(
+                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), keyInsightsData as any
+            );
+        }
+
+        // 保存评论分析子表
+        if (existingComments.total > 0) {
+            await databases.updateDocument<VideoCommentsAnalysis>(
+                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, existingComments.documents[0].$id, commentsData as any
+            );
+        } else {
+            await databases.createDocument<VideoCommentsAnalysis>(
+                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, ID.unique(), commentsData as any
+            );
+        }
+
+        // 组合完整数据（需要将 JSON 字符串解析回数组）
+        let finalSummaryData: FullSummaryData = {
+            ...mainDoc,
+            summary: summaryContentData.summary,
+            keyTakeaway: keyInsightsData.keyTakeaway,
+            keyPoints: parseJsonArray(keyInsightsData.keyPoints),
+            coreTerms: parseJsonArray(keyInsightsData.coreTerms),
+            commentsSummary: commentsData.commentsSummary,
+            commentsKeyPoints: parseJsonArray(commentsData.commentsKeyPoints),
+            commentsCount: commentsData.commentsCount
+        };
+
         const step5Time = Date.now() - step5Start;
-        console.log(`📊 Video ${videoId} - Step 5 (Save to database): ${step5Time}ms`, {
-            operation: existing.total > 0 ? 'update' : 'create',
-            summaryDataSize: JSON.stringify(summaryData).length
+        console.log(`📊 Video ${videoId} - Step 5 (Save to database - split tables): ${step5Time}ms`, {
+            operation: existingMain.total > 0 ? 'update' : 'create'
         });
 
-        // 6. 生成embedding并保存
+        // 7. 生成embedding并保存到单独的子表
         const step6Start = Date.now();
         let step6Time = 0;
         try {
-            // Combine title and summary for embedding generation
-            // const combinedText = `${summaryResult.title}\n\n${summaryResult.summary}`;
             const embedding = await generateEmbedding(summaryResult.summary);
-            // Store embedding as array directly (Appwrite supports float array)
-            await databases.updateDocument<SummaryData>(
-                'main',
-                'summaries',
-                finalSummaryData.$id,
-                { embedding: embedding }
-            );
+            // 使用新的分表保存embedding
+            await upsertVideoEmbedding(safeVideoId, platform, embedding);
             step6Time = Date.now() - step6Start;
             console.log(`📊 Video ${videoId} - Step 6 (Generate embedding): ${step6Time}ms`, {
                 embeddingDimensions: embedding.length
             });
-            // Update finalSummaryData with embedding
             finalSummaryData = { ...finalSummaryData, embedding };
         } catch (e) {
             step6Time = Date.now() - step6Start;
             console.warn(`📊 Video ${videoId} - Step 6 (Generate embedding) failed: ${step6Time}ms - ${e}`);
-            // Continue even if embedding generation fails
         }
 
         const totalTime = Date.now() - startTime;
@@ -203,7 +364,6 @@ export const generateVideoSummary = async (videoId: string): Promise<VideoSummar
 };
 
 // Streaming support
-const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
 const openai = new OpenAI({
     baseURL: OPENROUTER_BASE_URL,
     apiKey: OPENROUTER_API_KEY,
@@ -211,15 +371,12 @@ const openai = new OpenAI({
         'HTTP-Referer': 'https://gisttube.com',
         'X-Title': 'gisttube',
     },
-    fetchOptions: {
-        dispatcher: proxyAgent ? proxyAgent : undefined,
-    },
 });
 
 export type StreamEmitters = {
     onDelta?: (delta: string) => void;
     onComplete?: (fullSummary: string) => void;
-    onPartial?: (partial: Partial<SummaryData>) => void;
+    onPartial?: (partial: Partial<FullSummaryData>) => void;
 };
 
 /**
@@ -229,15 +386,17 @@ export type StreamEmitters = {
  */
 export const generateVideoSummaryStream = async (
     videoId: string,
-    emitters: StreamEmitters = {}
+    platform: VideoPlatform = 'youtube',
+    emitters: StreamEmitters = {},
+    subtitleUrl?: string
 ): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
-        console.log(`[video-summary-stream] 🚀 Starting unified summary generation for video ${videoId}`);
-        
+        console.log(`[video-summary-stream] 🚀 Starting unified summary generation for video ${videoId} platform=${platform}${subtitleUrl ? ' with subtitleUrl' : ''}`);
+
         // 1. 获取视频数据（包含评论数据）
         const step1Start = Date.now();
-        const videoData = await getVideoData(videoId);
+        const videoData = await getVideoData(videoId, platform, subtitleUrl);
         const step1Time = Date.now() - step1Start;
         console.log(`📊 Video ${videoId} - Step 1 (Get video data): ${step1Time}ms`, { 
             channelId: videoData.channelId, 
@@ -723,70 +882,187 @@ export const generateVideoSummaryStream = async (
             console.warn(`📊 Video ${videoId} - Step 5 (Save transcript) failed: ${step5Time}ms - ${e}`); 
         }
 
-        // 6. 组装并保存数据库记录
+        // 6. 组装并保存数据库记录（分表结构）
         const step6Start = Date.now();
         const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
-        const summaryData = {
-            videoId,
-            title: clamp(videoData.title, 100),
-            description: clamp(videoData.description, 5000),
-            author: clamp(videoData.author, 100),
-            channelId: videoData.channelId,
-            summary: clamp(structured.summary, 5000),
-            keyTakeaway: clamp(structured.keyTakeaway, 500),
-            keyPoints: structured.keyPoints,
-            coreTerms: structured.coreTerms,
-            hasSubtitles: videoData.hasSubtitles,
+        
+        // 确保数组序列化后不超过指定大小，并返回 JSON 字符串（数据库存储格式）
+        const limitArraySize = (arr: string[], maxSize: number): string => {
+            if (!arr || arr.length === 0) return '[]';
+            let result: string[] = [];
+            for (const item of arr) {
+                const testResult = [...result, item];
+                const jsonSize = JSON.stringify(testResult).length;
+                if (jsonSize <= maxSize) {
+                    result.push(item);
+                } else {
+                    break;
+                }
+            }
+            return JSON.stringify(result);
+        };
+        
+        // 解析 JSON 字符串回数组（用于返回数据）
+        const parseJsonArray = (jsonStr: string | string[]): string[] => {
+            if (Array.isArray(jsonStr)) return jsonStr; // 如果已经是数组，直接返回
+            if (typeof jsonStr === 'string') {
+                try {
+                    const parsed = JSON.parse(jsonStr);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            }
+            return [];
+        };
+        
+        const safeVideoId = clamp(videoId, 50);
+
+        // 主表数据
+        const mainData = {
+            videoId: safeVideoId,
+            platform: platform,
+            channelId: clamp(videoData.channelId, 50),
+            title: clamp(videoData.title, 200),
+            author: clamp(videoData.author, 150),
             publishedAt: videoData.publishedAt,
-            hits: 0,
+            hasSubtitles: videoData.hasSubtitles,
+            description: clamp(videoData.description, 2000),
+            hits: 0
+        };
+
+        // 摘要内容子表数据
+        const summaryContentData = {
+            videoId: safeVideoId,
+            platform: platform,
+            summary: clamp(structured.summary, 5000)
+        };
+
+        // 关键要点子表数据（keyPoints 和 coreTerms 需要存储为 JSON 字符串）
+        const keyInsightsData = {
+            videoId: safeVideoId,
+            platform: platform,
+            keyTakeaway: clamp(structured.keyTakeaway, 600),
+            keyPoints: limitArraySize(structured.keyPoints || [], 4000), // JSON 字符串
+            coreTerms: limitArraySize(structured.coreTerms || [], 2000)  // JSON 字符串
+        };
+
+        // 评论分析子表数据（commentsKeyPoints 需要存储为 JSON 字符串）
+        const commentsData = {
+            videoId: safeVideoId,
+            platform: platform,
             commentsSummary: clamp(structured.commentsSummary || '', 1000),
-            commentsKeyPoints: structured.commentsKeyPoints || [],
-            commentsCount: videoData.commentsCount || 0,
+            commentsKeyPoints: limitArraySize(structured.commentsKeyPoints || [], 2000), // JSON 字符串
+            commentsCount: videoData.commentsCount || 0
         };
 
         const step6DbStart = Date.now();
-        const existing = await databases.listDocuments<SummaryData>('main', 'summaries', [
-            Query.equal('videoId', videoId),
-            Query.limit(1),
+        await printDatabaseStructure('summaries');
+
+        // 检查各表是否已存在数据
+        const [existingMain, existingSummary, existingInsights, existingComments] = await Promise.all([
+            databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoSummaryContent>('main', COLLECTIONS.VIDEO_SUMMARIES, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoKeyInsights>('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ]),
+            databases.listDocuments<VideoCommentsAnalysis>('main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, [
+                Query.equal('videoId', safeVideoId),
+                Query.equal('platform', platform),
+                Query.limit(1)
+            ])
         ]);
 
-        let finalSummaryData: SummaryData;
-        if (existing.total > 0) {
-            const doc = existing.documents[0];
-            finalSummaryData = await databases.updateDocument<SummaryData>('main', 'summaries', doc.$id, summaryData);
+        let mainDoc: SummaryData;
+
+        // 保存主表
+        if (existingMain.total > 0) {
+            mainDoc = await databases.updateDocument<SummaryData>(
+                'main', COLLECTIONS.SUMMARIES, existingMain.documents[0].$id, mainData
+            );
         } else {
-            finalSummaryData = await databases.createDocument<SummaryData>('main', 'summaries', ID.unique(), summaryData);
+            mainDoc = await databases.createDocument<SummaryData>(
+                'main', COLLECTIONS.SUMMARIES, ID.unique(), mainData
+            );
         }
+
+        // 保存摘要内容子表
+        if (existingSummary.total > 0) {
+            await databases.updateDocument<VideoSummaryContent>(
+                'main', COLLECTIONS.VIDEO_SUMMARIES, existingSummary.documents[0].$id, summaryContentData
+            );
+        } else {
+            await databases.createDocument<VideoSummaryContent>(
+                'main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), summaryContentData
+            );
+        }
+
+        // 保存关键要点子表
+        if (existingInsights.total > 0) {
+            await databases.updateDocument<VideoKeyInsights>(
+                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, existingInsights.documents[0].$id, keyInsightsData as any
+            );
+        } else {
+            await databases.createDocument<VideoKeyInsights>(
+                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), keyInsightsData as any
+            );
+        }
+
+        // 保存评论分析子表
+        if (existingComments.total > 0) {
+            await databases.updateDocument<VideoCommentsAnalysis>(
+                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, existingComments.documents[0].$id, commentsData as any
+            );
+        } else {
+            await databases.createDocument<VideoCommentsAnalysis>(
+                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, ID.unique(), commentsData as any
+            );
+        }
+
+        // 组合完整数据（需要将 JSON 字符串解析回数组）
+        let finalSummaryData: FullSummaryData = {
+            ...mainDoc,
+            summary: summaryContentData.summary,
+            keyTakeaway: keyInsightsData.keyTakeaway,
+            keyPoints: parseJsonArray(keyInsightsData.keyPoints),
+            coreTerms: parseJsonArray(keyInsightsData.coreTerms),
+            commentsSummary: commentsData.commentsSummary,
+            commentsKeyPoints: parseJsonArray(commentsData.commentsKeyPoints),
+            commentsCount: commentsData.commentsCount
+        };
+
         const step6Time = Date.now() - step6Start;
         const step6DbTime = Date.now() - step6DbStart;
-        console.log(`📊 Video ${videoId} - Step 6 (Save to database): ${step6Time}ms`, {
+        console.log(`📊 Video ${videoId} - Step 6 (Save to database - split tables): ${step6Time}ms`, {
             dbOperationTime: step6DbTime,
-            operation: existing.total > 0 ? 'update' : 'create',
-            summaryDataSize: JSON.stringify(summaryData).length
+            operation: existingMain.total > 0 ? 'update' : 'create'
         });
 
-        // 7. 生成embedding并保存
+        // 7. 生成embedding并保存到单独的子表
         const step7Start = Date.now();
         let step7Time = 0;
         try {
             const embedding = await generateEmbedding(structured.summary);
-            // Store embedding as array directly (Appwrite supports double array)
-            await databases.updateDocument<SummaryData>(
-                'main',
-                'summaries',
-                finalSummaryData.$id,
-                { embedding: embedding }
-            );
+            // 使用新的分表保存embedding
+            await upsertVideoEmbedding(safeVideoId, platform, embedding);
             step7Time = Date.now() - step7Start;
             console.log(`📊 Video ${videoId} - Step 7 (Generate embedding): ${step7Time}ms`, {
                 embeddingDimensions: embedding.length
             });
-            // Update finalSummaryData with embedding
             finalSummaryData = { ...finalSummaryData, embedding };
         } catch (e) {
             step7Time = Date.now() - step7Start;
             console.warn(`📊 Video ${videoId} - Step 7 (Generate embedding) failed: ${step7Time}ms - ${e}`);
-            // Continue even if embedding generation fails
         }
 
         const totalTime = Date.now() - startTime;

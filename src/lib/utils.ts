@@ -1,3 +1,9 @@
+import type { VideoPlatformInfo } from '$lib/types';
+
+/**
+ * 从URL中提取视频ID（仅支持YouTube，向后兼容）
+ * @deprecated 使用 extractVideoInfo 代替，支持多平台
+ */
 export const extractVideoId = (url: string) => {
     const patterns = [
         /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
@@ -8,6 +14,49 @@ export const extractVideoId = (url: string) => {
         const match = url.match(pattern);
         if (match) return match[1];
     }
+    return null;
+}
+
+/**
+ * 从URL中提取视频信息（支持多平台）
+ * 客户端版本，不依赖服务器端代码
+ * @param url 视频URL
+ * @returns 平台信息和视频ID，如果无法识别则返回null
+ */
+export const extractVideoInfo = (url: string): VideoPlatformInfo | null => {
+    // YouTube URL 模式
+    const youtubePatterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+        /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+    ];
+
+    for (const pattern of youtubePatterns) {
+        const match = url.match(pattern);
+        if (match) {
+            return { platform: 'youtube', videoId: match[1] };
+        }
+    }
+
+    // Bilibili URL 模式
+    const bilibiliPatterns = [
+        /bilibili\.com\/video\/(BV[a-zA-Z0-9]+)/i,
+        /bilibili\.com\/video\/(av\d+)/i,
+        /b23\.tv\/([a-zA-Z0-9]+)/i
+    ];
+
+    for (const pattern of bilibiliPatterns) {
+        const match = url.match(pattern);
+        if (match) {
+            const id = match[1];
+            // 如果是BV号，直接返回
+            if (id.startsWith('BV')) {
+                return { platform: 'bilibili', videoId: id };
+            }
+            // 如果是av号或短链接，也返回（后续可能需要转换）
+            return { platform: 'bilibili', videoId: id };
+        }
+    }
+
     return null;
 }
 

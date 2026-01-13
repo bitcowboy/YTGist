@@ -1,7 +1,6 @@
 import { YOUTUBE_DATA_API_KEY } from "$env/static/private";
-import type { VideoMeta, Comment } from "$lib/types";
-import { getTranscript } from "$lib/server/transcript";
-import { getComments } from "$lib/server/comments";
+import type { VideoMeta, Comment, VideoPlatform } from "$lib/types";
+import { PlatformFactory } from "./platforms/platform-factory";
 
 const getVideoDataWithYouTubeAPI = async (videoId: string): Promise<VideoMeta> => {
 	const startTime = Date.now();
@@ -163,15 +162,16 @@ const getVideoDataWithYouTubeAPIWithoutTranscript = async (videoId: string): Pro
 };
 
 
-export const getVideoData = async (videoId: string): Promise<VideoMeta> => {
-	if (!YOUTUBE_DATA_API_KEY) {
-		throw new Error('YouTube Data API key is required but not configured');
+export const getVideoData = async (videoId: string, platform: VideoPlatform = 'youtube', subtitleUrl?: string): Promise<VideoMeta> => {
+	const platformInstance = PlatformFactory.getPlatform(platform);
+	if (!platformInstance) {
+		throw new Error(`Unsupported platform: ${platform}`);
 	}
 
 	try {
-		return await getVideoDataWithYouTubeAPI(videoId);
+		return await platformInstance.getVideoData(videoId, subtitleUrl);
 	} catch (error) {
-		console.error('Failed to get video data:', error);
+		console.error(`Failed to get video data for ${platform}:`, error);
 		
 		// If it's a no subtitles error, preserve it
 		if (error instanceof Error && error.message === 'NO_SUBTITLES_AVAILABLE') {
@@ -182,15 +182,16 @@ export const getVideoData = async (videoId: string): Promise<VideoMeta> => {
 	}
 };
 
-export const getVideoDataWithoutTranscript = async (videoId: string): Promise<Omit<VideoMeta, 'transcript'>> => {
-	if (!YOUTUBE_DATA_API_KEY) {
-		throw new Error('YouTube Data API key is required but not configured');
+export const getVideoDataWithoutTranscript = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<Omit<VideoMeta, 'transcript'>> => {
+	const platformInstance = PlatformFactory.getPlatform(platform);
+	if (!platformInstance) {
+		throw new Error(`Unsupported platform: ${platform}`);
 	}
 
 	try {
-		return await getVideoDataWithYouTubeAPIWithoutTranscript(videoId);
+		return await platformInstance.getVideoDataWithoutTranscript(videoId);
 	} catch (error) {
-		console.error('Failed to get video data:', error);
+		console.error(`Failed to get video data for ${platform}:`, error);
 		throw new Error(`Failed to get video data. ${error}`);
 	}
 };
