@@ -34,9 +34,13 @@ export class BilibiliPlatform implements VideoPlatformInterface {
 			const match = url.match(pattern);
 			if (match) {
 				const id = match[1];
-				// 如果是BV号，直接返回
+				// 提取P参数（分P编号）
+				const pMatch = url.match(/[?&]p=(\d+)/i);
+				const pParam = pMatch ? pMatch[1] : null;
+				
+				// 如果是BV号，附加P参数（如果有）
 				if (id.startsWith('BV')) {
-					return id;
+					return pParam ? `${id}P${pParam}` : id;
 				}
 				// 如果是av号，需要转换为BV号（这里先返回av号，后续可能需要转换）
 				// 如果是短链接，需要先解析获取真实BV号
@@ -49,8 +53,9 @@ export class BilibiliPlatform implements VideoPlatformInterface {
 	validateVideoId(videoId: string): boolean {
 		// Bilibili视频ID格式：
 		// BV号：BV + 10个字符（字母数字）
+		// BV号+分P：BV + 10个字符（字母数字）+ P + 数字（例如：BVXXXXXXXXXXP1）
 		// AV号：av + 数字（已废弃，但可能仍存在）
-		return /^BV[a-zA-Z0-9]{10}$/.test(videoId) || /^av\d+$/i.test(videoId);
+		return /^BV[a-zA-Z0-9]{10}(P\d+)?$/.test(videoId) || /^av\d+$/i.test(videoId);
 	}
 
 	async getVideoData(videoId: string, subtitleUrl?: string): Promise<VideoMeta> {
@@ -59,8 +64,16 @@ export class BilibiliPlatform implements VideoPlatformInterface {
 			return await this.getVideoDataWithSubtitleUrl(videoId, subtitleUrl);
 		}
 
-		// 确保是BV格式
-		const bvid = videoId.startsWith('BV') ? videoId : await this.convertToBvid(videoId);
+		// 提取BV号和P参数
+		let bvid = videoId.startsWith('BV') ? videoId : await this.convertToBvid(videoId);
+		let pIndex: number | null = null;
+		
+		// 如果videoID包含P参数（例如：BVXXXXXXXXXXP1），提取BV号和P索引
+		const pMatch = bvid.match(/^(BV[a-zA-Z0-9]{10})P(\d+)$/);
+		if (pMatch) {
+			bvid = pMatch[1];
+			pIndex = parseInt(pMatch[2], 10) - 1; // P参数从1开始，数组索引从0开始
+		}
 
 		// 获取视频详情
 		const videoInfoUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
@@ -83,7 +96,13 @@ export class BilibiliPlatform implements VideoPlatformInterface {
 
 		const data = videoInfoData.data;
 		const aid = data.aid;
-		const cid = data.pages?.[0]?.cid || data.cid; // 获取第一个分P的cid
+		// 如果有P参数，获取对应分P的cid；否则获取第一个分P的cid
+		let cid: number;
+		if (pIndex !== null && data.pages && data.pages[pIndex]) {
+			cid = data.pages[pIndex].cid;
+		} else {
+			cid = data.pages?.[0]?.cid || data.cid;
+		}
 
 		// 并行获取字幕和评论
 		const [transcriptResult, commentsResult] = await Promise.allSettled([
@@ -146,8 +165,16 @@ export class BilibiliPlatform implements VideoPlatformInterface {
 		);
 		console.log(`[Bilibili]   - subtitleUrl:`, subtitleUrl);
 
-		// 确保是BV格式
-		const bvid = videoId.startsWith('BV') ? videoId : await this.convertToBvid(videoId);
+		// 提取BV号和P参数
+		let bvid = videoId.startsWith('BV') ? videoId : await this.convertToBvid(videoId);
+		let pIndex: number | null = null;
+		
+		// 如果videoID包含P参数（例如：BVXXXXXXXXXXP1），提取BV号和P索引
+		const pMatch = bvid.match(/^(BV[a-zA-Z0-9]{10})P(\d+)$/);
+		if (pMatch) {
+			bvid = pMatch[1];
+			pIndex = parseInt(pMatch[2], 10) - 1; // P参数从1开始，数组索引从0开始
+		}
 
 		// 获取视频详情
 		const videoInfoUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
