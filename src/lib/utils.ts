@@ -48,9 +48,14 @@ export const extractVideoInfo = (url: string): VideoPlatformInfo | null => {
         const match = url.match(pattern);
         if (match) {
             const id = match[1];
-            // 如果是BV号，直接返回
+            // 提取P参数（分P编号）
+            const pMatch = url.match(/[?&]p=(\d+)/i);
+            const pParam = pMatch ? pMatch[1] : null;
+            
+            // 如果是BV号，附加P参数（如果有）
             if (id.startsWith('BV')) {
-                return { platform: 'bilibili', videoId: id };
+                const videoId = pParam ? `${id}P${pParam}` : id;
+                return { platform: 'bilibili', videoId };
             }
             // 如果是av号或短链接，也返回（后续可能需要转换）
             return { platform: 'bilibili', videoId: id };

@@ -22,6 +22,13 @@ const PLATFORM_URLS: Record<
 	},
 	bilibili: {
 		getVideoUrl: (videoId: string) => {
+			// 处理带P参数的videoID（例如：BVXXXXXXXXXXP1）
+			const pMatch = videoId.match(/^(BV[a-zA-Z0-9]{10})P(\d+)$/);
+			if (pMatch) {
+				const bvid = pMatch[1];
+				const p = pMatch[2];
+				return `https://www.bilibili.com/video/${bvid}?p=${p}`;
+			}
 			// 确保BV号格式正确
 			const bvid = videoId.startsWith('BV') ? videoId : videoId;
 			return `https://www.bilibili.com/video/${bvid}`;
