@@ -28,7 +28,7 @@ export async function fetchTranscriptForVideo(
   youtube: Innertube,
   videoId: string
 ): Promise<{ error: string } | { segments: YouTubeSegment[] }> {
-  const info = await youtube.getBasicInfo(videoId);
+  const info = await youtube.getBasicInfo(videoId, {client: 'ANDROID'});
 
   const captionTracks = info.captions?.caption_tracks;
 

@@ -1,6 +1,5 @@
 import { FREE_TRANSCRIPT_ENDPOINT, PROXY_URI } from '$env/static/private';
 import { ProxyAgent } from 'undici';
-import { Innertube, Platform, UniversalCache } from 'youtubei.js';
 import { fetchTranscriptForVideo } from './captions/transcript-service';
 import { fetchTimedTextXml } from './captions/transcript-service';
 import { parseTimedTextXml } from './captions/transcript-parser';
@@ -22,7 +21,7 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
 };
 
 export const getTranscript = async (videoId: string) => {
-    // If FREE_TRANSCRIPT_ENDPOINT is not available, go straight to methodTwo
+    // If FREE_TRANSCRIPT_ENDPOINT is not available, go straight to methodThree
     if (!FREE_TRANSCRIPT_ENDPOINT) {
         console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodThree');
         try {
@@ -54,7 +53,7 @@ export const getTranscript = async (videoId: string) => {
         console.warn('methodOne failed, falling back to methodThree:', error);
     }
 
-    // Fallback to methodTwo with timeout
+    // Fallback to methodThree with timeout
     try {
         console.log('Using methodThree as fallback...');
         return await withTimeout(
@@ -110,111 +109,6 @@ const methodOne = async (videoId: string, useProxy = false, langCode = "en") => 
     }
 
     return transcript;
-}
-
-const methodTwo = async (videoId: string) => {
-    console.log(`[methodTwo] Starting transcript extraction for video: ${videoId}`);
-    
-    const innertubeOptions: any = {
-        cache: new UniversalCache(true)
-    };
-
-    // Only use proxy if proxyAgent is available
-    if (proxyAgent) {
-        console.log('[methodTwo] Using proxy agent');
-        innertubeOptions.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-            const options: Record<string, unknown> = { ...init, dispatcher: proxyAgent };
-            return Platform.shim.fetch(input, options)
-        };
-    } else {
-        console.log('[methodTwo] No proxy agent, using direct connection');
-    }
-
-    try {
-        console.log('[methodTwo] Creating Innertube instance...');
-        const innertube = await Innertube.create(innertubeOptions);
-        console.log('[methodTwo] Innertube instance created successfully');
-
-        console.log('[methodTwo] Getting video info...');
-        const info = await innertube.getInfo(videoId);
-        console.log('[methodTwo] Video info retrieved successfully');
-        
-        try {
-            console.log('[methodTwo] Attempting to get transcript...');
-            
-            // Try to get transcript (youtubei.js doesn't support language parameter)
-            console.log('[methodTwo] Attempting to get transcript with default settings...');
-            let transcriptInfo = await info.getTranscript();
-            console.log('[methodTwo] Transcript info:', transcriptInfo.languages);
-
-            console.log('[methodTwo] Transcript info retrieved:', {
-                hasTranscript: !!transcriptInfo,
-                hasContent: !!transcriptInfo?.transcript,
-                hasBody: !!transcriptInfo?.transcript?.content,
-                hasSegments: !!transcriptInfo?.transcript?.content?.body,
-                segmentsCount: transcriptInfo?.transcript?.content?.body?.initial_segments?.length || 0
-            });
-            
-            // Check if transcript data is available
-            if (!transcriptInfo?.transcript?.content?.body?.initial_segments) {
-                console.log('[methodTwo] No transcript segments found');
-                throw new Error('NO_SUBTITLES_AVAILABLE');
-            }
-            
-            const segments = transcriptInfo.transcript.content.body.initial_segments;
-            console.log('[methodTwo] Processing segments:', {
-                count: segments.length,
-                firstSegment: segments[0] ? {
-                    text: segments[0].snippet?.text?.substring(0, 50) + '...',
-                    hasStartTime: 'start_time_ms' in segments[0],
-                    hasDuration: 'duration_ms' in segments[0]
-                } : null
-            });
-            
-            const transcript = segments
-                .map((segment) => {
-                    const text = segment.snippet.text;
-                    const startTimeMs = (segment as any).start_time_ms;
-                    if (startTimeMs !== undefined && startTimeMs !== null) {
-                        const timestamp = formatTimestamp(startTimeMs);
-                        return `[${timestamp}] ${text}`;
-                    }
-                    return text;
-                })
-                .join('\n');
-                
-            console.log('[methodTwo] Generated transcript length:', transcript.length);
-            console.log('[methodTwo] Transcript preview:', transcript.substring(0, 200) + '...');
-                
-            // Check if transcript is empty or just whitespace
-            if (!transcript || transcript.trim() === '') {
-                console.log('[methodTwo] Transcript is empty or whitespace only');
-                throw new Error('NO_SUBTITLES_AVAILABLE');
-            }
-
-            console.log('[methodTwo] Successfully extracted transcript');
-            return transcript;
-        } catch (transcriptError) {
-            console.error('[methodTwo] Failed to get transcript:', transcriptError);
-            
-            // If the error is already our specific error, re-throw it
-            if (transcriptError instanceof Error && transcriptError.message === 'NO_SUBTITLES_AVAILABLE') {
-                throw transcriptError;
-            }
-            
-            // Log the actual error for debugging
-            console.error('[methodTwo] Transcript error details:', {
-                message: transcriptError instanceof Error ? transcriptError.message : String(transcriptError),
-                name: transcriptError instanceof Error ? transcriptError.name : 'Unknown',
-                stack: transcriptError instanceof Error ? transcriptError.stack : undefined
-            });
-            
-            throw new Error('NO_SUBTITLES_AVAILABLE');
-        }
-    } catch (error) {
-        console.error('[methodTwo] Innertube error:', error);
-        throw new Error('NO_SUBTITLES_AVAILABLE');
-    }
 }
 
 const methodThree = async (videoId: string) => {
