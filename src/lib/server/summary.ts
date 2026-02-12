@@ -84,7 +84,7 @@ export const getSummary = async (videoData: VideoMeta): Promise<AISummaryResult>
 			createApiRequestOptions([
 				{
 					role: "system",
-					content: prompt
+					content: [prompt, prompt, prompt].join('\n\n')
 				},
 				{
 					role: "user",

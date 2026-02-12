@@ -17,7 +17,7 @@ Single JSON object only:
 ```json
 {
   "keyTakeaway": "Most important insights.",
-  "summary": "Summarize the video in 3-5 paragraphs according to the length/density of the transcript.",
+  "summary": "Summarize the video in 3-7 paragraphs according to the length/density of the transcript.",
   "keyPoints": [
     "03:00 - Key actionable insight as complete sentence.",
     "08:05 - Another key insight."
@@ -43,6 +43,7 @@ Single JSON object only:
 - Break the paragraphs using two empty lines.
 - Summary should cover main topic and why it matters, key arguments/methods/findings, conclusions and practical implications. Don't using leading words like "Main topic", "Conclusions", etc.
 - Summary should be in Simplified Chinese.
+- Use more paragraphs for long videos.
 
 **points**: 
 - Time stamp and Most important actionable insights. 

@@ -474,7 +474,7 @@ export const generateVideoSummaryStream = async (
                 model: OPENROUTER_MODEL,
                 stream: true,
                 messages: [
-                    { role: 'system', content: prompt },
+                    { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
             } as any);
