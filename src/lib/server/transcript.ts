@@ -1,14 +1,16 @@
 import { FREE_TRANSCRIPT_ENDPOINT, PROXY_URI } from '$env/static/private';
 import { ProxyAgent } from 'undici';
 import { fetchTranscriptForVideo } from './captions/transcript-service';
-import { fetchTimedTextXml } from './captions/transcript-service';
-import { parseTimedTextXml } from './captions/transcript-parser';
-import { convertToYouTubeSegments, formatTimestamp } from './captions/transcript-parser';
-import type { TranscriptSegment } from './captions/transcript-parser';
-import { initializeYouTube } from './captions/client';
+import { formatTimestamp } from './captions/transcript-parser';
 
 // Only create proxy agent if PROXY_URI is available
 const proxyAgent = PROXY_URI ? new ProxyAgent(PROXY_URI) : null;
+
+/** yt-dlp can take a long time (many langs + --sleep-subtitles). Override with TRANSCRIPT_YTDLP_TIMEOUT_MS. */
+const methodThreeTimeoutMs = () => {
+    const n = Number(process.env.TRANSCRIPT_YTDLP_TIMEOUT_MS);
+    return Number.isFinite(n) && n > 0 ? n : 120_000;
+};
 
 // Helper function to add timeout to promises
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> => {
@@ -25,10 +27,11 @@ export const getTranscript = async (videoId: string) => {
     if (!FREE_TRANSCRIPT_ENDPOINT) {
         console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodThree');
         try {
+            const ytdlpMs = methodThreeTimeoutMs();
             return await withTimeout(
                 methodThree(videoId), 
-                15000, 
-                'Transcript fetch timeout after 15 seconds'
+                ytdlpMs, 
+                `Transcript fetch timeout after ${ytdlpMs}ms`
             );
         } catch (error) {
             // Avoid noisy stack traces for known no-subtitles cases
@@ -56,10 +59,11 @@ export const getTranscript = async (videoId: string) => {
     // Fallback to methodThree with timeout
     try {
         console.log('Using methodThree as fallback...');
+        const ytdlpMs = methodThreeTimeoutMs();
         return await withTimeout(
             methodThree(videoId), 
-            15000, 
-            'Transcript fetch timeout after 15 seconds'
+            ytdlpMs, 
+            `Transcript fetch timeout after ${ytdlpMs}ms`
         );
     } catch (error) {
         // If it's a no subtitles error, preserve it with low-noise log
@@ -112,21 +116,9 @@ const methodOne = async (videoId: string, useProxy = false, langCode = "en") => 
 }
 
 const methodThree = async (videoId: string) => {
-    console.log(`[methodThree] Starting transcript extraction for video: ${videoId}`);
-    
-    const [youtube, clientError] = await initializeYouTube();
-    if (clientError) {
-      console.error('[methodThree] Failed to initialize YouTube client:', clientError);
-      throw new Error('Failed to initialize YouTube client');
-    }
+    console.log(`[methodThree] Starting transcript extraction (yt-dlp) for video: ${videoId}`);
 
-    if (!youtube) {
-      console.error('[methodThree] Failed to initialize YouTube client');
-      throw new Error('Failed to initialize YouTube client');
-    }
-
-    console.log('[methodThree] Fetching transcript for video:', videoId);
-    const result = await fetchTranscriptForVideo(youtube, videoId);
+    const result = await fetchTranscriptForVideo(videoId);
 
     if (result && 'segments' in result) {
       const transcript = result.segments

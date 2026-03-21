@@ -73,9 +73,13 @@ Optional variables (leave empty if not needed):
 PROXY_URI="" # A rotating proxy URI to bypass YouTube IP blocks (from webshare.io for example)
 FREE_TRANSCRIPT_ENDPOINT="" # I am using a transcript endpoint that I'm keeping a secret
 YOUTUBE_DATA_API_KEY="" # YouTube Data API Key for fetching data quickly
+YTDLP_BIN="" # Optional: full path to yt-dlp (defaults to "yt-dlp" on PATH)
+TRANSCRIPT_YTDLP_TIMEOUT_MS="" # Optional: max wait for yt-dlp (default 120000 ms)
 ```
 
 ### 5. Install dependencies and run
+
+Install a recent **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** and put it on your `PATH` (or set `YTDLP_BIN` to the executable). When `FREE_TRANSCRIPT_ENDPOINT` is empty or fails, the server uses `yt-dlp` to download **JSON3** subtitles for YouTube transcripts (no `--sub-langs`; yt-dlp’s defaults apply). **Auto-translated** subtitle tracks (YouTube’s machine translation from another language) are skipped via `--extractor-args youtube:skip=translated_subs`. Production Node deployments should include `yt-dlp` on the host or image.
 
 ```bash
 # Install Node.js dependencies (you can use npm too)

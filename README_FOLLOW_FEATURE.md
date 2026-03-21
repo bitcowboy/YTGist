@@ -47,7 +47,7 @@ CRON_SECRET=your-secret-key-for-cron-authentication
 
 ## 技术实现
 
-- 使用 youtubei.js 获取频道视频
+- 使用 YouTube 频道 RSS 获取新视频
 - 使用现有的 AI 总结功能
 - 客户端状态管理类似 block-list
 - GitHub Actions 定时任务调用 API

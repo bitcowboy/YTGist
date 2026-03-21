@@ -6,7 +6,8 @@ let proxyAgent: ProxyAgent | null = null;
 let proxyFailed = false;
 let proxyConfigured = false;
 
-function parseProxyUrl(proxyUrl: string): string {
+/** Same URL normalization as the undici proxy agent; use for tools that need a plain proxy URL (e.g. yt-dlp `--proxy`). */
+export function normalizeProxyUrl(proxyUrl: string): string {
   // If already has protocol, return as-is
   if (proxyUrl.startsWith('http://') || proxyUrl.startsWith('https://')) {
     return proxyUrl;
@@ -52,10 +53,10 @@ export function getProxyFetch(): typeof fetch | undefined {
 
   if (!proxyAgent) {
     try {
-      const parsedUrl = parseProxyUrl(proxyUrl);
+      const parsedUrl = normalizeProxyUrl(proxyUrl);
       proxyAgent = new ProxyAgent(parsedUrl);
       proxyConfigured = true;
-    } catch (error) {
+    } catch {
       proxyFailed = true;
       proxyConfigured = true;
       return undefined;

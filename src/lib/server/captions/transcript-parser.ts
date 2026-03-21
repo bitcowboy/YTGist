@@ -88,6 +88,46 @@ export function parseTimedTextXml(xml: string): TranscriptSegment[] {
   return parseTextTagFormat(xml);
 }
 
+/** YouTube timedtext JSON3 (e.g. from yt-dlp `--sub-format json3`). */
+export function parseYoutubeJson3(jsonText: string): TranscriptSegment[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(jsonText) as unknown;
+  } catch {
+    return [];
+  }
+  if (!data || typeof data !== 'object') return [];
+  const events = (data as { events?: unknown }).events;
+  if (!Array.isArray(events)) return [];
+
+  const segments: TranscriptSegment[] = [];
+  for (const ev of events) {
+    if (!ev || typeof ev !== 'object') continue;
+    const e = ev as Record<string, unknown>;
+    const tStartMs = typeof e.tStartMs === 'number' ? e.tStartMs : 0;
+    const dDurationMs = typeof e.dDurationMs === 'number' ? e.dDurationMs : 0;
+    const segs = e.segs;
+    if (!Array.isArray(segs)) continue;
+
+    let text = '';
+    for (const seg of segs) {
+      if (seg && typeof seg === 'object' && 'utf8' in seg) {
+        const u = (seg as { utf8?: unknown }).utf8;
+        if (typeof u === 'string') text += u;
+      }
+    }
+    text = decodeHtmlEntities(text.replace(/\s+/g, ' ')).trim();
+    if (!text) continue;
+
+    segments.push({
+      startMs: tStartMs,
+      durationMs: Math.max(dDurationMs, 1),
+      text,
+    });
+  }
+  return segments;
+}
+
 export function convertToYouTubeSegments(segments: TranscriptSegment[]): YouTubeSegment[] {
   return segments.map((segment) => ({
     end_ms: String(segment.startMs + segment.durationMs),
