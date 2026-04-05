@@ -16,7 +16,6 @@ const expectedCollections = {
 			'publishedAt',
 			'author',
 			'hasSubtitles',
-			'embedding',
 			'coreTerms',
 			'description',
 			'commentsSummary',
@@ -38,18 +37,6 @@ const expectedCollections = {
 		attributes: ['date', 'summary', 'videoCount', 'channelCount'],
 		requiredAttributes: ['date', 'summary', 'videoCount', 'channelCount']
 	},
-	projects: {
-		attributes: ['name', 'createdAt'],
-		requiredAttributes: ['name', 'createdAt']
-	},
-	project_videos: {
-		attributes: ['projectId', 'videoId', 'addedAt', 'order'],
-		requiredAttributes: ['projectId', 'videoId', 'addedAt', 'order']
-	},
-	project_summaries: {
-		attributes: ['projectId', 'title', 'body', 'keyTakeaway', 'videoIds', 'generatedAt', 'isStale'],
-		requiredAttributes: ['projectId', 'title', 'body', 'keyTakeaway', 'videoIds', 'generatedAt']
-	},
 	collections: {
 		attributes: ['name', 'description', 'createdAt'],
 		requiredAttributes: ['name', 'createdAt']
@@ -69,14 +56,6 @@ const expectedCollections = {
 			'isStale'
 		],
 		requiredAttributes: ['collectionId', 'title', 'body', 'keyTakeaway', 'videoIds', 'generatedAt']
-	},
-	clusters: {
-		attributes: ['name', 'description', 'videoCount', 'createdAt'],
-		requiredAttributes: ['name', 'videoCount', 'createdAt']
-	},
-	video_clusters: {
-		attributes: ['videoId', 'clusterId', 'createdAt'],
-		requiredAttributes: ['videoId', 'clusterId', 'createdAt']
 	}
 };
 

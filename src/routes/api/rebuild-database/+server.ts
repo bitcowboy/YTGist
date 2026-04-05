@@ -9,18 +9,12 @@ const ALL_COLLECTIONS = [
 	'video_summaries',
 	'video_key_insights',
 	'video_comments_analysis',
-	'video_embeddings',
 	'transcripts',
 	'blocked_channels',
 	'daily-summaries',
-	'projects',
-	'project_videos',
-	'project_summaries',
 	'collections',
 	'collection_videos',
-	'collection_summaries',
-	'clusters',
-	'video_clusters'
+	'collection_summaries'
 ];
 
 export const POST: RequestHandler = async () => {

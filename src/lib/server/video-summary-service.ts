@@ -6,13 +6,10 @@ import {
     getSummary as getMainSummary,
     getVideoSummaryContent,
     getVideoKeyInsights,
-    getVideoCommentsAnalysis,
-    getFullSummary,
-    upsertVideoEmbedding
+    getVideoCommentsAnalysis
 } from '$lib/server/database.js';
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData } from '$lib/server/videoData.js';
-import { generateEmbedding } from '$lib/server/embedding.js';
 import type { SummaryData, FullSummaryData, VideoPlatform, VideoSummaryContent, VideoKeyInsights, VideoCommentsAnalysis } from '$lib/types.js';
 import { ID, Query } from 'node-appwrite';
 import OpenAI from 'openai';
@@ -300,23 +297,6 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
             operation: existingMain.total > 0 ? 'update' : 'create'
         });
 
-        // 7. 生成embedding并保存到单独的子表
-        const step6Start = Date.now();
-        let step6Time = 0;
-        try {
-            const embedding = await generateEmbedding(summaryResult.summary);
-            // 使用新的分表保存embedding
-            await upsertVideoEmbedding(safeVideoId, platform, embedding);
-            step6Time = Date.now() - step6Start;
-            console.log(`📊 Video ${videoId} - Step 6 (Generate embedding): ${step6Time}ms`, {
-                embeddingDimensions: embedding.length
-            });
-            finalSummaryData = { ...finalSummaryData, embedding };
-        } catch (e) {
-            step6Time = Date.now() - step6Start;
-            console.warn(`📊 Video ${videoId} - Step 6 (Generate embedding) failed: ${step6Time}ms - ${e}`);
-        }
-
         const totalTime = Date.now() - startTime;
         console.log(`🎉 Unified summary generation completed for ${videoId} in ${totalTime}ms`, {
             breakdown: {
@@ -325,7 +305,6 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
                 step3_unifiedAI: step3Time,
                 step4_saveTranscript: step4Time,
                 step5_saveToDB: step5Time,
-                step6_generateEmbedding: step6Time,
                 total: totalTime
             },
             performance: {
@@ -1048,23 +1027,6 @@ export const generateVideoSummaryStream = async (
             operation: existingMain.total > 0 ? 'update' : 'create'
         });
 
-        // 7. 生成embedding并保存到单独的子表
-        const step7Start = Date.now();
-        let step7Time = 0;
-        try {
-            const embedding = await generateEmbedding(structured.summary);
-            // 使用新的分表保存embedding
-            await upsertVideoEmbedding(safeVideoId, platform, embedding);
-            step7Time = Date.now() - step7Start;
-            console.log(`📊 Video ${videoId} - Step 7 (Generate embedding): ${step7Time}ms`, {
-                embeddingDimensions: embedding.length
-            });
-            finalSummaryData = { ...finalSummaryData, embedding };
-        } catch (e) {
-            step7Time = Date.now() - step7Start;
-            console.warn(`📊 Video ${videoId} - Step 7 (Generate embedding) failed: ${step7Time}ms - ${e}`);
-        }
-
         const totalTime = Date.now() - startTime;
         console.log(`🎉 Unified summary pipeline completed for ${videoId} in ${totalTime}ms`, {
             breakdown: {
@@ -1074,7 +1036,6 @@ export const generateVideoSummaryStream = async (
                 step4_unifiedAI: step4Time,
                 step5_saveTranscript: step5Time,
                 step6_saveToDB: step6Time,
-                step7_generateEmbedding: step7Time,
                 total: totalTime
             },
             llmTiming: {

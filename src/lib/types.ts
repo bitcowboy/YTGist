@@ -56,7 +56,6 @@ export interface VideoMeta {
 // 子表：video_summaries - 存储视频摘要内容
 // 子表：video_key_insights - 存储关键要点（keyTakeaway/keyPoints/coreTerms）
 // 子表：video_comments_analysis - 存储评论分析
-// 子表：video_embeddings - 存储向量嵌入
 
 // 主表 - 视频基础信息和元数据
 export interface SummaryData extends AppwriteDocument {
@@ -105,13 +104,6 @@ export interface VideoCommentsAnalysis extends AppwriteDocument {
     commentsCount: number;        // 评论数量
 }
 
-// 向量嵌入表 - 用于语义搜索和聚类
-export interface VideoEmbedding extends AppwriteDocument {
-    videoId: string;
-    platform: VideoPlatform;
-    embedding: number[]; // 1536维向量
-}
-
 // 组合类型 - 用于API响应，包含所有分表数据
 export interface FullSummaryData extends SummaryData {
     // 来自 video_summaries 表
@@ -126,9 +118,6 @@ export interface FullSummaryData extends SummaryData {
     commentsSummary?: string;
     commentsKeyPoints?: string[];
     commentsCount?: number;
-    
-    // 来自 video_embeddings 表
-    embedding?: number[];
 }
 
 // AI 生成的摘要结果类型（不包含数据库元数据）
@@ -170,32 +159,6 @@ export interface BlockedChannel extends AppwriteDocument {
     blockedAt: string;
 }
 
-// 项目类型
-export interface Project extends AppwriteDocument {
-    name: string;
-    createdAt: string;
-    customPrompt?: string; // custom AI prompt for summary generation
-}
-
-// 项目视频类型
-export interface ProjectVideo extends AppwriteDocument {
-	projectId: string;
-	videoId: string;
-	addedAt: string;
-	order: number;
-}
-
-// 项目总结缓存类型
-export interface ProjectSummary extends AppwriteDocument {
-	projectId: string;
-	title: string;
-	body: string;
-	keyTakeaway: string; // 添加 keyTakeaway 字段
-	videoIds: string; // comma-separated list of video IDs
-	generatedAt: string;
-	isStale: boolean;
-}
-
 // 分类类型
 export interface Collection extends AppwriteDocument {
 	name: string;
@@ -221,51 +184,3 @@ export interface CollectionSummary extends AppwriteDocument {
 	isStale: boolean;
 }
 
-// 聚类类型
-export interface Cluster extends AppwriteDocument {
-	name: string;
-	description?: string;
-	videoCount: number;
-	createdAt: string;
-}
-
-// 视频聚类关联类型
-export interface VideoCluster extends AppwriteDocument {
-	videoId: string;
-	clusterId: string;
-	createdAt: string;
-}
-
-// 聚类层次结构类型
-export interface ClusterHierarchy {
-	lambdaRange: [number, number];
-	levels: ClusterLevel[];
-}
-
-export interface ClusterLevel {
-	lambda: number;
-	clusters: ClusterAssignment[];
-	noiseCount: number;
-	clusterCount: number;
-}
-
-export interface ClusterAssignment {
-	clusterId: string;
-	videoIds: string[];
-	size: number;
-	stability?: number;
-}
-
-// 聚类树状结构类型
-export interface ClusterTreeNode {
-	id: string;
-	lambda: number;
-	videoIds: string[];
-	videoCount: number;
-	children?: ClusterTreeNode[];
-	isExpanded?: boolean;
-}
-
-export interface ClusterTree {
-	root: ClusterTreeNode;
-}

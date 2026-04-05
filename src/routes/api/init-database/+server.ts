@@ -81,19 +81,6 @@ export const POST: RequestHandler = async () => {
                     { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
                 ]
             },
-            // 子表：video_embeddings - 存储向量嵌入
-            {
-                name: 'video_embeddings',
-                attributes: [
-                    { name: 'videoId', type: 'string', size: 50, required: true },
-                    { name: 'platform', type: 'string', size: 20, required: true },
-                    { name: 'embedding', type: 'double', size: 0, required: false, array: true }, // 1536维向量
-                ],
-                indexes: [
-                    { key: 'videoId', type: 'unique', attributes: ['videoId'] },
-                    { key: 'videoId_platform', type: 'unique', attributes: ['videoId', 'platform'] }
-                ]
-            },
             {
                 name: 'transcripts',
                 attributes: [
@@ -128,44 +115,6 @@ export const POST: RequestHandler = async () => {
                 ],
                 indexes: [
                     { key: 'date', type: 'unique', attributes: ['date'] }
-                ]
-            },
-            {
-                name: 'projects',
-                attributes: [
-                    { name: 'name', type: 'string', size: 500, required: true },
-                    { name: 'createdAt', type: 'datetime', required: true }
-                ],
-                indexes: [
-                    { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
-                ]
-            },
-            {
-                name: 'project_videos',
-                attributes: [
-                    { name: 'projectId', type: 'string', size: 255, required: true },
-                    { name: 'videoId', type: 'string', size: 255, required: true },
-                    { name: 'addedAt', type: 'datetime', required: true },
-                    { name: 'order', type: 'integer', required: true }
-                ],
-                indexes: [
-                    { key: 'projectId', type: 'key', attributes: ['projectId'] },
-                    { key: 'projectId_order', type: 'key', attributes: ['projectId', 'order'] }
-                ]
-            },
-            {
-                name: 'project_summaries',
-                attributes: [
-                    { name: 'projectId', type: 'string', size: 255, required: true },
-                    { name: 'title', type: 'string', size: 500, required: true },
-                    { name: 'body', type: 'string', size: 20000, required: true },
-                    { name: 'keyTakeaway', type: 'string', size: 2000, required: true },
-                    { name: 'videoIds', type: 'string', size: 5000, required: true },
-                    { name: 'generatedAt', type: 'datetime', required: true },
-                    { name: 'isStale', type: 'boolean', required: false }
-                ],
-                indexes: [
-                    { key: 'projectId', type: 'unique', attributes: ['projectId'] }
                 ]
             },
             {
@@ -204,31 +153,6 @@ export const POST: RequestHandler = async () => {
                 ],
                 indexes: [
                     { key: 'collectionId', type: 'unique', attributes: ['collectionId'] }
-                ]
-            },
-            {
-                name: 'clusters',
-                attributes: [
-                    { name: 'name', type: 'string', size: 500, required: true },
-                    { name: 'description', type: 'string', size: 2000, required: false },
-                    { name: 'videoCount', type: 'integer', required: true },
-                    { name: 'createdAt', type: 'datetime', required: true }
-                ],
-                indexes: [
-                    { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
-                ]
-            },
-            {
-                name: 'video_clusters',
-                attributes: [
-                    { name: 'videoId', type: 'string', size: 255, required: true },
-                    { name: 'clusterId', type: 'string', size: 255, required: true },
-                    { name: 'createdAt', type: 'datetime', required: true }
-                ],
-                indexes: [
-                    { key: 'videoId', type: 'key', attributes: ['videoId'] },
-                    { key: 'clusterId', type: 'key', attributes: ['clusterId'] },
-                    { key: 'videoId_clusterId', type: 'key', attributes: ['videoId', 'clusterId'] }
                 ]
             }
         ];
