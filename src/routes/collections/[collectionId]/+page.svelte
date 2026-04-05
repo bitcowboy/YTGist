@@ -25,8 +25,21 @@
 	let renameInputValue = $state('');
 	let renameDescInputValue = $state('');
 	let renameError = $state<string | null>(null);
-	let collectionName = $state(data.collection?.name || '');
-	let collectionDescription = $state(data.collection?.description || '');
+	let nameOverride = $state<string | null>(null);
+	let descOverride = $state<string | null>(null);
+	const collectionName = $derived(nameOverride ?? data.collection?.name ?? '');
+	const collectionDescription = $derived(descOverride ?? data.collection?.description ?? '');
+
+	const collectionKey = $derived(data.collection?.$id ?? '');
+	let prevCollectionKey = $state<string | null>(null);
+	$effect.pre(() => {
+		const k = collectionKey;
+		if (prevCollectionKey !== k) {
+			prevCollectionKey = k;
+			nameOverride = null;
+			descOverride = null;
+		}
+	});
 	
 	// YouTube players map - stores player instances
 	let youtubePlayers = $state<Map<string, any>>(new Map());
@@ -201,10 +214,10 @@
 		});
 	}
 
-	// Initialize cache status from server data
-	if (data.summaryCacheStatus) {
-		cacheStatus = data.summaryCacheStatus;
-	}
+	$effect.pre(() => {
+		data.collection?.$id;
+		cacheStatus = data.summaryCacheStatus ?? null;
+	});
 
 	// Function to load cached summary
 	async function loadCachedSummary() {
@@ -399,24 +412,24 @@
 		}
 		
 		renameError = null;
-		const originalName = collectionName;
-		const originalDesc = collectionDescription;
-		
+		const prevNameOv = nameOverride;
+		const prevDescOv = descOverride;
+
 		// Optimistically update
-		collectionName = trimmedName;
-		collectionDescription = renameDescInputValue.trim();
-		
+		nameOverride = trimmedName;
+		descOverride = renameDescInputValue.trim();
+
 		try {
 			const updatedCollection = await updateCollection(data.collection.$id, trimmedName, renameDescInputValue.trim() || undefined);
-			collectionName = updatedCollection.name;
-			collectionDescription = updatedCollection.description || '';
+			nameOverride = updatedCollection.name;
+			descOverride = updatedCollection.description || '';
 			isRenamingCollection = false;
 			renameInputValue = '';
 			renameDescInputValue = '';
 		} catch (error) {
 			// Revert on error
-			collectionName = originalName;
-			collectionDescription = originalDesc;
+			nameOverride = prevNameOv;
+			descOverride = prevDescOv;
 			renameError = error instanceof Error ? error.message : '重命名分类失败';
 		}
 	}
@@ -432,13 +445,6 @@
 		}
 	}
 
-	// Sync collectionName when data.collection changes
-	$effect(() => {
-		if (data.collection) {
-			collectionName = data.collection.name;
-			collectionDescription = data.collection.description || '';
-		}
-	});
 </script>
 
 <svelte:head>

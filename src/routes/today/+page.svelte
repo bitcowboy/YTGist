@@ -6,7 +6,7 @@
 	import type { PageData } from './$types.js';
 
 	let { data }: { data: PageData } = $props();
-	let summaries: SummaryData[] = data.todaySummaries;
+	const summaries = $derived(data.todaySummaries);
 </script>
 
 <svelte:head>

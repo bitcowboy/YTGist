@@ -11,7 +11,15 @@
 
 	const { data } = $props();
 
-	let collections = $state((data.collections || []) as any[]);
+	const collectionsFromServer = $derived((data.collections || []) as any[]);
+	let collectionsLocal = $state<any[] | null>(null);
+	const collections = $derived(collectionsLocal ?? collectionsFromServer);
+
+	$effect.pre(() => {
+		data.collections;
+		collectionsLocal = null;
+	});
+
 	let showCreateModal = $state(false);
 	let showEditModal = $state(false);
 	let editingCollection: Collection | null = $state(null);
@@ -58,7 +66,8 @@
 		
 		try {
 			const newCollection = await createCollection(collectionName.trim(), collectionDescription.trim() || undefined);
-			collections = [...collections, { ...newCollection, videoCount: 0 }];
+			const base = collectionsLocal ?? collectionsFromServer;
+			collectionsLocal = [...base, { ...newCollection, videoCount: 0 }];
 			closeCreateModal();
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to create collection';
@@ -79,8 +88,9 @@
 				collectionName.trim(),
 				collectionDescription.trim() || undefined
 			);
-			collections = collections.map(c => 
-				c.$id === updatedCollection.$id 
+			const base = collectionsLocal ?? collectionsFromServer;
+			collectionsLocal = base.map((c) =>
+				c.$id === updatedCollection.$id
 					? { ...updatedCollection, videoCount: c.videoCount }
 					: c
 			);
@@ -99,7 +109,8 @@
 		
 		try {
 			await deleteCollection(collection.$id);
-			collections = collections.filter(c => c.$id !== collection.$id);
+			const base = collectionsLocal ?? collectionsFromServer;
+			collectionsLocal = base.filter((c) => c.$id !== collection.$id);
 		} catch (err) {
 			alert(err instanceof Error ? err.message : '删除分类失败');
 		}

@@ -13,7 +13,7 @@
 	}
 
 	let { data }: { data: PageData } = $props();
-	let summaries: RecentSummary[] = data.summaries;
+	const summaries = $derived(data.summaries as RecentSummary[]);
 </script>
 
 <svelte:head>

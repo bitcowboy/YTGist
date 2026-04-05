@@ -18,17 +18,35 @@
 	import InlineChat from '$lib/components/chat/inline-chat.svelte';
 	import CommentsSummary from '$lib/components/summary/comments-summary.svelte';
 	import CommentsKeyPoints from '$lib/components/summary/comments-key-points.svelte';
+import { page } from '$app/state';
 import { addTodayHistoryEntry } from '$lib/client/today-history';
 import { openSummaryStream } from '$lib/client/summary-stream';
 
 	const { data } = $props();
 
-	let summaryData = $state<FullSummaryData | null>(data.summaryData);
+	const loadKey = $derived(
+		`${page.url.searchParams.get('v') ?? ''}:${(data as { platform?: string }).platform ?? 'youtube'}`
+	);
+	let prevLoadKey = $state<string | null>(null);
+	let clientSummary = $state<FullSummaryData | null>(null);
+	let clientPlatform = $state<string | null>(null);
+
+	$effect.pre(() => {
+		const k = loadKey;
+		if (prevLoadKey !== k) {
+			prevLoadKey = k;
+			clientSummary = null;
+			clientPlatform = null;
+		}
+	});
+
+	const summaryData = $derived(clientSummary ?? data.summaryData);
+	const platform = $derived(clientPlatform ?? (data as { platform?: string }).platform ?? 'youtube');
+
 	let error = $state<string | null>(null);
 	let isNoSubtitlesError = $state<boolean>(false);
 	let videoTitle = $state<string | null>(null);
 	let videoId = $state<string | null>(null);
-	let platform = $state<string>((data as any).platform || 'youtube');
 
 	// 辅助函数：构建带platform参数的API URL
 	const buildApiUrl = (endpoint: string, videoId: string, platform: string = 'youtube') => {
@@ -89,7 +107,7 @@ onMount(() => {
 			
 			// Store videoId and platform for use in components
 			videoId = urlVideoId;
-			platform = urlPlatform;
+			clientPlatform = urlPlatform;
 
             // 使用SSE进行流式获取
             (async () => {
@@ -162,21 +180,21 @@ onMount(() => {
                     if (partial.commentsSummary) partialCommentsSummary = partial.commentsSummary as string;
                     if (partial.commentsKeyPoints && Array.isArray(partial.commentsKeyPoints)) partialCommentsKeyPoints = [...partialCommentsKeyPoints, ...partial.commentsKeyPoints as string[]];
                 },
-                onFinal: (data) => {
+                onFinal: (payload) => {
                     streamFinalized = true;
-                    summaryData = data;
+                    clientSummary = payload;
                     error = null;
                     isNoSubtitlesError = false;
-                    window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: data.hasSubtitles === true } }));
-                    window.dispatchEvent(new CustomEvent('yg:channelInfo', { detail: { channelId: data.channelId, channelName: data.author } }));
-                    addTodayHistoryEntry(data);
+                    window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: payload.hasSubtitles === true } }));
+                    window.dispatchEvent(new CustomEvent('yg:channelInfo', { detail: { channelId: payload.channelId, channelName: payload.author } }));
+                    addTodayHistoryEntry(payload);
                     // set streaming states to final payload to avoid flicker/blanking
                     streamingText = '';
-                    partialKeyTakeaway = data.keyTakeaway || '';
-                    partialKeyPoints = data.keyPoints || [];
-                    partialCoreTerms = data.coreTerms || [];
-                    partialCommentsSummary = data.commentsSummary || '';
-                    partialCommentsKeyPoints = data.commentsKeyPoints || [];
+                    partialKeyTakeaway = payload.keyTakeaway || '';
+                    partialKeyPoints = payload.keyPoints || [];
+                    partialCoreTerms = payload.coreTerms || [];
+                    partialCommentsSummary = payload.commentsSummary || '';
+                    partialCommentsKeyPoints = payload.commentsKeyPoints || [];
                     kpExpectNew = false;
                     ctExpectNew = false;
                     ckpExpectNew = false;
