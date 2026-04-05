@@ -23,7 +23,6 @@ export const COLLECTIONS = {
     VIDEO_COMMENTS_ANALYSIS: 'video_comments_analysis', // 子表：评论分析
     // 其他表
     TRANSCRIPTS: 'transcripts',
-    DAILY_SUMMARIES: 'daily-summaries',
     BLOCKED_CHANNELS: 'blocked_channels',
     COLLECTIONS: 'collections',
     COLLECTION_VIDEOS: 'collection_videos',
@@ -463,120 +462,6 @@ export const getTranscriptByVideoId = async (
     }
 };
 
-// Daily Summary 相关操作
-export interface DailySummaryData {
-    $id: string;
-    $createdAt: string;
-    $updatedAt: string;
-    $collectionId: string;
-    $databaseId: string;
-    $permissions: string[];
-    $sequence: number;
-    date: string; // YYYY-MM-DD format
-    overview: string;
-    themes: string; // JSON string
-    keyInsights: string; // JSON string
-    videoCount: number;
-}
-
-export const getDailySummary = async (date: string): Promise<DailySummaryData | null> => {
-    try {
-        const { documents } = await databases.listDocuments<DailySummaryData>(
-            'main',
-            COLLECTIONS.DAILY_SUMMARIES,
-            [Query.equal('date', date), Query.limit(1)]
-        );
-        
-        if (documents.length === 0) return null;
-        
-        const doc = documents[0];
-        return {
-            ...doc,
-            themes: JSON.parse(doc.themes), // 反序列化 JSON 字符串
-            keyInsights: JSON.parse(doc.keyInsights) // 反序列化 JSON 字符串
-        };
-    } catch (error) {
-        console.error('Failed to get daily summary:', error);
-        return null;
-    }
-};
-
-export const createDailySummary = async (dailySummaryData: {
-    date: string;
-    overview: string;
-    themes: Array<{
-        theme: string;
-        videos: Array<{
-            title: string;
-            keyTakeaway: string;
-            videoId: string;
-        }>;
-        summary: string;
-    }>;
-    keyInsights: string[];
-    videoCount: number;
-}): Promise<DailySummaryData> => {
-    return await databases.createDocument<DailySummaryData>(
-        'main',
-        COLLECTIONS.DAILY_SUMMARIES,
-        ID.unique(),
-        {
-            date: dailySummaryData.date,
-            overview: dailySummaryData.overview,
-            themes: JSON.stringify(dailySummaryData.themes), // 序列化为 JSON 字符串
-            keyInsights: JSON.stringify(dailySummaryData.keyInsights), // 序列化为 JSON 字符串
-            videoCount: dailySummaryData.videoCount
-        }
-    );
-};
-
-export const updateDailySummary = async (date: string, updateData: Partial<{
-    overview: string;
-    themes: Array<{
-        theme: string;
-        videos: Array<{
-            title: string;
-            keyTakeaway: string;
-            videoId: string;
-        }>;
-        summary: string;
-    }>;
-    keyInsights: string[];
-    videoCount: number;
-}>): Promise<DailySummaryData> => {
-    const existing = await getDailySummary(date);
-    if (!existing) {
-        throw new Error('Daily summary not found');
-    }
-    
-    // 序列化复杂对象
-    const serializedData: any = {};
-    if (updateData.overview) serializedData.overview = updateData.overview;
-    if (updateData.videoCount !== undefined) serializedData.videoCount = updateData.videoCount;
-    if (updateData.themes) serializedData.themes = JSON.stringify(updateData.themes);
-    if (updateData.keyInsights) serializedData.keyInsights = JSON.stringify(updateData.keyInsights);
-    
-    return await databases.updateDocument<DailySummaryData>(
-        'main',
-        COLLECTIONS.DAILY_SUMMARIES,
-        existing.$id,
-        serializedData
-    );
-};
-
-export const deleteDailySummary = async (date: string): Promise<void> => {
-    const existing = await getDailySummary(date);
-    if (!existing) {
-        throw new Error('Daily summary not found');
-    }
-    
-    await databases.deleteDocument(
-        'main',
-        COLLECTIONS.DAILY_SUMMARIES,
-        existing.$id
-    );
-};
-
 // Blocked Channel 相关操作
 export const getBlockedChannels = async (): Promise<BlockedChannel[]> => {
     try {
@@ -725,87 +610,11 @@ export const clearChannelData = async (channelId: string): Promise<void> => {
             }
         }
         
-        // 4. 检查并更新daily-summaries表（如果包含被删除的视频）
-        // 这里需要重新生成daily summary，因为可能包含被删除的视频
-        await invalidateDailySummariesContainingChannel(channelId);
-        
         console.log(`Channel data cleared successfully for channel: ${channelId}`);
         
     } catch (error) {
         console.error('Failed to clear channel data:', error);
         throw error;
-    }
-};
-
-// 使包含指定频道视频的daily summaries失效
-export const invalidateDailySummariesContainingChannel = async (channelId: string): Promise<void> => {
-    try {
-        // 获取该频道的所有videoId
-        const { documents: summaries } = await databases.listDocuments<SummaryData>(
-            'main',
-            COLLECTIONS.SUMMARIES,
-            [Query.equal('channelId', channelId)]
-        );
-        
-        const videoIds = summaries.map(summary => summary.videoId);
-        
-        if (videoIds.length === 0) {
-            console.log(`No videos found for channel ${channelId}, skipping daily summary invalidation`);
-            return;
-        }
-        
-        // 获取所有daily summaries
-        const { documents: dailySummaries } = await databases.listDocuments<DailySummaryData>(
-            'main',
-            COLLECTIONS.DAILY_SUMMARIES
-        );
-        
-        // 检查每个daily summary是否包含被删除的视频
-        for (const dailySummary of dailySummaries) {
-            try {
-                const themes = JSON.parse(dailySummary.themes);
-                let needsUpdate = false;
-                
-                // 检查themes中是否包含被删除的视频
-                for (const theme of themes) {
-                    const originalVideoCount = theme.videos.length;
-                    theme.videos = theme.videos.filter((video: any) => !videoIds.includes(video.videoId));
-                    
-                    if (theme.videos.length !== originalVideoCount) {
-                        needsUpdate = true;
-                        console.log(`Removed ${originalVideoCount - theme.videos.length} videos from theme "${theme.theme}" in daily summary ${dailySummary.date}`);
-                    }
-                }
-                
-                if (needsUpdate) {
-                    // 重新计算videoCount
-                    const totalVideoCount = themes.reduce((count: number, theme: any) => count + theme.videos.length, 0);
-                    
-                    // 如果没有任何视频了，删除这个daily summary
-                    if (totalVideoCount === 0) {
-                        await databases.deleteDocument('main', COLLECTIONS.DAILY_SUMMARIES, dailySummary.$id);
-                        console.log(`Deleted daily summary for ${dailySummary.date} as it contained only blocked channel videos`);
-                    } else {
-                        // 更新daily summary
-                        await databases.updateDocument<DailySummaryData>(
-                            'main',
-                            COLLECTIONS.DAILY_SUMMARIES,
-                            dailySummary.$id,
-                            {
-                                themes: JSON.stringify(themes),
-                                videoCount: totalVideoCount
-                            }
-                        );
-                        console.log(`Updated daily summary for ${dailySummary.date}, new video count: ${totalVideoCount}`);
-                    }
-                }
-            } catch (error) {
-                console.error(`Failed to process daily summary ${dailySummary.date}:`, error);
-            }
-        }
-    } catch (error) {
-        console.error('Failed to invalidate daily summaries:', error);
-        // 不抛出错误，因为这不是关键操作
     }
 };
 

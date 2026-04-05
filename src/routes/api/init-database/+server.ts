@@ -106,18 +106,6 @@ export const POST: RequestHandler = async () => {
                 ]
             },
             {
-                name: 'daily-summaries',
-                attributes: [
-                    { name: 'date', type: 'string', size: 10, required: true },
-                    { name: 'summary', type: 'string', size: 20000, required: true },
-                    { name: 'videoCount', type: 'integer', required: true },
-                    { name: 'channelCount', type: 'integer', required: true }
-                ],
-                indexes: [
-                    { key: 'date', type: 'unique', attributes: ['date'] }
-                ]
-            },
-            {
                 name: 'collections',
                 attributes: [
                     { name: 'name', type: 'string', size: 500, required: true },

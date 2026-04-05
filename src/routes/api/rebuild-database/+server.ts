@@ -11,7 +11,6 @@ const ALL_COLLECTIONS = [
 	'video_comments_analysis',
 	'transcripts',
 	'blocked_channels',
-	'daily-summaries',
 	'collections',
 	'collection_videos',
 	'collection_summaries'

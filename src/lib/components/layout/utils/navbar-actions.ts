@@ -59,32 +59,6 @@ export async function regenerateSummary(videoId: string): Promise<void> {
 }
 
 /**
- * Regenerate daily summary
- */
-export async function regenerateDailySummary(date?: string): Promise<void> {
-	const nonceResponse = await fetch('/api/generate-nonce');
-	if (!nonceResponse.ok) {
-		throw new Error('Failed to generate nonce');
-	}
-	const { nonce } = await nonceResponse.json();
-
-	const response = await fetch(`/api/regenerate-daily-summary`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({ nonce, ...(date && { date }) })
-	});
-
-	if (!response.ok) {
-		const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-		throw new Error(errorData.error || 'Failed to regenerate daily summary');
-	}
-
-	window.location.reload();
-}
-
-/**
  * Block or unblock a channel
  */
 export async function toggleBlockChannel(
@@ -103,14 +77,4 @@ export async function toggleBlockChannel(
 			`Channel "${channelName}" has been blocked. Videos from this channel will no longer be processed.`
 		);
 	}
-}
-
-/**
- * Generate daily report
- */
-export function generateDailyReport(date: string): void {
-	const dateParam = encodeURIComponent(date);
-	const url = `/daily-report?date=${dateParam}`;
-	const fullUrl = window.location.origin + url;
-	window.open(fullUrl, '_blank', 'noopener,noreferrer');
 }

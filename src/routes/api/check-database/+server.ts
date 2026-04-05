@@ -33,10 +33,6 @@ const expectedCollections = {
 		attributes: ['channelId', 'channelName', 'blockedAt'],
 		requiredAttributes: ['channelId', 'channelName', 'blockedAt']
 	},
-	'daily-summaries': {
-		attributes: ['date', 'summary', 'videoCount', 'channelCount'],
-		requiredAttributes: ['date', 'summary', 'videoCount', 'channelCount']
-	},
 	collections: {
 		attributes: ['name', 'description', 'createdAt'],
 		requiredAttributes: ['name', 'createdAt']
