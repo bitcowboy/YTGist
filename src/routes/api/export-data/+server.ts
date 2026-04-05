@@ -9,7 +9,7 @@ export const POST: RequestHandler = async () => {
 	try {
 		console.log('📤 Starting data export...');
 
-		const collectionsToExport = ['transcripts', 'summaries', 'followed_channels'];
+		const collectionsToExport = ['transcripts', 'summaries'];
 
 		const exportDir = path.join(process.cwd(), 'data-export');
 		if (!fs.existsSync(exportDir)) {

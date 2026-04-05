@@ -26,20 +26,6 @@ const expectedCollections = {
 		],
 		requiredAttributes: ['videoId', 'platform', 'title', 'summary', 'keyTakeaway', 'keyPoints']
 	},
-	followed_channels: {
-		attributes: [
-			'channelId',
-			'channelName',
-			'channelUrl',
-			'thumbnailUrl',
-			'followedAt',
-			'isActive',
-			'lastProcessedVideoId',
-			'lastProcessedVideoTitle',
-			'lastProcessedVideoPublishedAt'
-		],
-		requiredAttributes: ['channelId', 'channelName', 'followedAt', 'isActive']
-	},
 	transcripts: {
 		attributes: ['videoId', 'platform', 'transcript', 'language'],
 		requiredAttributes: ['videoId', 'transcript']

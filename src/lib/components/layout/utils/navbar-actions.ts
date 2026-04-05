@@ -106,38 +106,6 @@ export async function toggleBlockChannel(
 }
 
 /**
- * Follow or unfollow a channel
- */
-export async function toggleFollowChannel(
-	channelId: string,
-	channelName: string,
-	isFollowed: boolean,
-	onSuccess?: () => void
-): Promise<void> {
-	const nonceResp = await fetch('/api/generate-nonce');
-	if (!nonceResp.ok) throw new Error('Failed to generate nonce');
-	const { nonce } = await nonceResp.json();
-
-	const resp = await fetch('/api/follow-channel', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			nonce,
-			action: isFollowed ? 'unfollow' : 'follow',
-			channelId,
-			channelName
-		})
-	});
-
-	if (!resp.ok) {
-		const err = await resp.json().catch(() => ({}));
-		throw new Error(err?.error || `API error: ${resp.status}`);
-	}
-
-	onSuccess?.();
-}
-
-/**
  * Generate daily report
  */
 export function generateDailyReport(date: string): void {

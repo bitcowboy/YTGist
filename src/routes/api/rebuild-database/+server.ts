@@ -10,7 +10,6 @@ const ALL_COLLECTIONS = [
 	'video_key_insights',
 	'video_comments_analysis',
 	'video_embeddings',
-	'followed_channels',
 	'transcripts',
 	'blocked_channels',
 	'daily-summaries',

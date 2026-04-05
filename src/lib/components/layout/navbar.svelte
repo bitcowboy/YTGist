@@ -5,13 +5,10 @@
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import BanIcon from '@lucide/svelte/icons/ban';
-	import UserPlusIcon from '@lucide/svelte/icons/user-plus';
-	import UserMinusIcon from '@lucide/svelte/icons/user-minus';
 import { page } from '$app/state';
 import { onMount } from 'svelte';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import { addToBlockList, removeFromBlockList, isChannelBlocked, getBlockedChannels } from '$lib/client/block-list';
-	import { goto } from '$app/navigation';
 	import { fetchProjects, createProject, addVideoToProject, removeVideoFromProject } from '$lib/client/projects';
 	import { classifyAndCollectVideo, fetchVideoCollections, removeVideoFromCollection } from '$lib/client/collections';
 	import type { Collection } from '$lib/types';
@@ -20,24 +17,6 @@ let hasSubtitles = $state<boolean | null>(null);
 let currentChannelId = $state<string | null>(null);
 let currentChannelName = $state<string | null>(null);
 let isChannelBlockedState = $state<boolean>(false);
-let isChannelFollowedState = $state<boolean>(false);
-
-// 从服务器检查频道关注状态
-const checkChannelFollowStatus = async () => {
-    if (!currentChannelId) return;
-    
-    try {
-        const response = await fetch('/api/followed-channels');
-        const data = await response.json();
-        
-        if (data.success) {
-            const isFollowed = data.channels.some((channel: any) => channel.channelId === currentChannelId);
-            isChannelFollowedState = isFollowed;
-        }
-    } catch (error) {
-        console.error('Failed to check channel follow status:', error);
-    }
-};
 
 onMount(() => {
     // Initial state from SSR if available
@@ -53,8 +32,6 @@ onMount(() => {
         isChannelBlocked(ssrData.channelId).then(blocked => {
             isChannelBlockedState = blocked;
         });
-        // Check if channel is followed from server
-        checkChannelFollowStatus();
     }
 
     const handler = (e: Event) => {
@@ -77,12 +54,6 @@ onMount(() => {
         } catch {}
     };
 
-
-    const followListHandler = (e: Event) => {
-        // 不再依赖本地事件，改为从服务器获取状态
-        checkChannelFollowStatus();
-    };
-
     const channelInfoHandler = (e: Event) => {
         try {
             const detail = (e as CustomEvent).detail as { channelId: string; channelName: string };
@@ -93,15 +64,12 @@ onMount(() => {
                 isChannelBlocked(detail.channelId).then(blocked => {
                     isChannelBlockedState = blocked;
                 });
-                // Check if channel is followed from server
-                checkChannelFollowStatus();
             }
         } catch {}
     };
 
     window.addEventListener('yg:hasSubtitles', handler as EventListener);
     window.addEventListener('yg:blockListUpdated', blockListHandler as EventListener);
-    window.addEventListener('yg:followListUpdated', followListHandler as EventListener);
     window.addEventListener('yg:channelInfo', channelInfoHandler as EventListener);
     
     // Handle click outside collection dropdown
@@ -113,7 +81,6 @@ onMount(() => {
         window.removeEventListener('yg:hasSubtitles', handler as EventListener);
         document.removeEventListener('click', handleCollectionDropdownClick);
         window.removeEventListener('yg:blockListUpdated', blockListHandler as EventListener);
-        window.removeEventListener('yg:followListUpdated', followListHandler as EventListener);
         window.removeEventListener('yg:channelInfo', channelInfoHandler as EventListener);
         window.removeEventListener('keydown', handleKeydown as EventListener);
         window.removeEventListener('click', handleGlobalClick as EventListener);
@@ -166,9 +133,6 @@ onMount(() => {
 
 	// State for block button
 	let isBlocking = $state(false);
-
-	// State for follow button
-	let isFollowing = $state(false);
 
 	// State for daily report modal
 	let showDailyReportModal = $state(false);
@@ -381,47 +345,6 @@ onMount(() => {
 			alert(`Failed to ${isChannelBlockedState ? 'unblock' : 'block'} channel. Please try again.`);
 		} finally {
 			isBlocking = false;
-		}
-	}
-
-	// Function to follow/unfollow channel
-	async function toggleFollow() {
-		if (!currentChannelId || !currentChannelName || isFollowing) return;
-
-		isFollowing = true;
-		
-		try {
-			// 先获取nonce
-			const nonceResp = await fetch('/api/generate-nonce');
-			if (!nonceResp.ok) throw new Error('Failed to generate nonce');
-			const { nonce } = await nonceResp.json();
-
-			// 调用后端API
-			const resp = await fetch('/api/follow-channel', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					nonce,
-					action: isChannelFollowedState ? 'unfollow' : 'follow',
-					channelId: currentChannelId,
-					channelName: currentChannelName
-				})
-			});
-			
-			if (!resp.ok) {
-				const err = await resp.json().catch(() => ({}));
-				throw new Error(err?.error || `API error: ${resp.status}`);
-			}
-
-			// 后端成功后，重新从服务器获取状态
-			await checkChannelFollowStatus();
-			
-			console.log(`Successfully ${isChannelFollowedState ? 'unfollowed' : 'followed'} channel: ${currentChannelName}`);
-		} catch (e) {
-			console.error('Follow/unfollow error:', e);
-			alert(`Failed to ${isChannelFollowedState ? 'unfollow' : 'follow'} channel: ${e instanceof Error ? e.message : e}`);
-		} finally {
-			isFollowing = false;
 		}
 	}
 
@@ -824,29 +747,6 @@ onMount(() => {
 			{/if}
 
 			{#if showBlockButton()}
-				<button
-					onclick={toggleFollow}
-					disabled={isFollowing || !currentChannelId || !currentChannelName}
-					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 {isChannelFollowedState ? 'hover:bg-red-500/10 text-zinc-300 hover:text-red-300' : 'hover:bg-green-500/10 text-zinc-300 hover:text-green-300'} disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-					title={
-						!currentChannelId || !currentChannelName 
-							? 'Loading channel information...' 
-							: isChannelFollowedState 
-								? `Unfollow channel "${currentChannelName}"` 
-								: `Follow channel "${currentChannelName}"`
-					}
-				>
-					{#if isChannelFollowedState}
-						<UserMinusIcon class="h-4 w-4 transition-colors duration-200 {isFollowing ? 'animate-pulse' : ''}" />
-						<span class="hidden sm:block">{isFollowing ? 'Unfollowing...' : 'Unfollow Channel'}</span>
-					{:else}
-						<UserPlusIcon class="h-4 w-4 transition-colors duration-200 {isFollowing ? 'animate-pulse' : ''}" />
-						<span class="hidden sm:block">{isFollowing ? 'Following...' : 'Follow Channel'}</span>
-					{/if}
-				</button>
-			{/if}
-
-			{#if showBlockButton()}
 				<!-- Collect Button -->
 				<div class="relative" role="presentation" onclick={(e) => e.stopPropagation()}>
 					<button
@@ -1006,16 +906,6 @@ onMount(() => {
 				</svg>
 				<span class="hidden sm:block">Projects</span>
 			</button>
-			{#if !showBlockButton()}
-				<button
-					onclick={() => goto('/follow')}
-					title="View followed channels"
-					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-zinc-300 transition-all duration-200 hover:scale-105 hover:bg-white/10 hover:text-zinc-100"
-				>
-					<UserPlusIcon class="h-4 w-4 transition-colors duration-200 group-hover:text-zinc-100" />
-					<span class="hidden sm:block">Follow</span>
-				</button>
-			{/if}
 			<button
 				onclick={openDailyReport}
 				title="Generate daily report for any date"

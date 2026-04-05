@@ -170,20 +170,6 @@ export interface BlockedChannel extends AppwriteDocument {
     blockedAt: string;
 }
 
-// 关注的频道类型
-export interface FollowedChannel extends AppwriteDocument {
-    channelId: string;
-    channelName: string;
-    channelUrl?: string;
-    thumbnailUrl?: string;
-    followedAt: string;
-    lastCheckedAt?: string;
-    lastProcessedVideoId?: string; // 最新处理的视频ID，用于增量更新
-    lastProcessedVideoTitle?: string; // 最新处理的视频标题
-    lastProcessedVideoPublishedAt?: string; // 最新处理的视频发布时间
-    isActive: boolean;
-}
-
 // 项目类型
 export interface Project extends AppwriteDocument {
     name: string;

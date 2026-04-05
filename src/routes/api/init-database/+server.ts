@@ -95,24 +95,6 @@ export const POST: RequestHandler = async () => {
                 ]
             },
             {
-                name: 'followed_channels',
-                attributes: [
-                    { name: 'channelId', type: 'string', size: 255, required: true },
-                    { name: 'channelName', type: 'string', size: 500, required: true },
-                    { name: 'channelUrl', type: 'string', size: 1000, required: false },
-                    { name: 'thumbnailUrl', type: 'string', size: 1000, required: false },
-                    { name: 'followedAt', type: 'datetime', required: true },
-                    { name: 'isActive', type: 'boolean', required: true },
-                    { name: 'lastProcessedVideoId', type: 'string', size: 255, required: false },
-                    { name: 'lastProcessedVideoTitle', type: 'string', size: 1000, required: false },
-                    { name: 'lastProcessedVideoPublishedAt', type: 'string', size: 50, required: false }
-                ],
-                indexes: [
-                    { key: 'channelId', type: 'unique', attributes: ['channelId'] },
-                    { key: 'isActive', type: 'key', attributes: ['isActive'] }
-                ]
-            },
-            {
                 name: 'transcripts',
                 attributes: [
                     { name: 'videoId', type: 'string', size: 255, required: true },
