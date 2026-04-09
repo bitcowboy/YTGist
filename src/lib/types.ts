@@ -158,29 +158,3 @@ export interface BlockedChannel extends AppwriteDocument {
     channelName: string;
     blockedAt: string;
 }
-
-// 分类类型
-export interface Collection extends AppwriteDocument {
-	name: string;
-	description?: string;
-	createdAt: string;
-}
-
-// 分类视频关联类型
-export interface CollectionVideo extends AppwriteDocument {
-	collectionId: string;
-	videoId: string;
-	addedAt: string;
-}
-
-// 分类总结缓存类型
-export interface CollectionSummary extends AppwriteDocument {
-	collectionId: string;
-	title: string;
-	body: string;
-	keyTakeaway: string;
-	videoIds: string; // comma-separated list of video IDs
-	generatedAt: string;
-	isStale: boolean;
-}
-

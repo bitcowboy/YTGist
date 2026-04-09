@@ -104,44 +104,6 @@ export const POST: RequestHandler = async () => {
                 indexes: [
                     { key: 'channelId', type: 'unique', attributes: ['channelId'] }
                 ]
-            },
-            {
-                name: 'collections',
-                attributes: [
-                    { name: 'name', type: 'string', size: 500, required: true },
-                    { name: 'description', type: 'string', size: 2000, required: false },
-                    { name: 'createdAt', type: 'datetime', required: true }
-                ],
-                indexes: [
-                    { key: 'createdAt', type: 'key', attributes: ['createdAt'] }
-                ]
-            },
-            {
-                name: 'collection_videos',
-                attributes: [
-                    { name: 'collectionId', type: 'string', size: 255, required: true },
-                    { name: 'videoId', type: 'string', size: 255, required: true },
-                    { name: 'addedAt', type: 'datetime', required: true }
-                ],
-                indexes: [
-                    { key: 'collectionId', type: 'key', attributes: ['collectionId'] },
-                    { key: 'collectionId_videoId', type: 'key', attributes: ['collectionId', 'videoId'] }
-                ]
-            },
-            {
-                name: 'collection_summaries',
-                attributes: [
-                    { name: 'collectionId', type: 'string', size: 255, required: true },
-                    { name: 'title', type: 'string', size: 500, required: true },
-                    { name: 'body', type: 'string', size: 20000, required: true },
-                    { name: 'keyTakeaway', type: 'string', size: 2000, required: true },
-                    { name: 'videoIds', type: 'string', size: 5000, required: true },
-                    { name: 'generatedAt', type: 'datetime', required: true },
-                    { name: 'isStale', type: 'boolean', required: false }
-                ],
-                indexes: [
-                    { key: 'collectionId', type: 'unique', attributes: ['collectionId'] }
-                ]
             }
         ];
 
@@ -208,7 +170,7 @@ export const POST: RequestHandler = async () => {
                                             undefined,
                                             undefined,
                                             undefined,
-                                            attr.array
+                                            (attr as any).array
                                         );
                                     }
                                     console.log(`Added missing attribute '${attr.name}' to '${collection.name}'`);
@@ -284,7 +246,7 @@ export const POST: RequestHandler = async () => {
                                 undefined,
                                 undefined,
                                 undefined,
-                                attr.array
+                                (attr as any).array
                             );
                         }
                     } catch (attrError) {

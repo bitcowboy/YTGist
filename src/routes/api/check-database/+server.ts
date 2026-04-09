@@ -32,26 +32,6 @@ const expectedCollections = {
 	blocked_channels: {
 		attributes: ['channelId', 'channelName', 'blockedAt'],
 		requiredAttributes: ['channelId', 'channelName', 'blockedAt']
-	},
-	collections: {
-		attributes: ['name', 'description', 'createdAt'],
-		requiredAttributes: ['name', 'createdAt']
-	},
-	collection_videos: {
-		attributes: ['collectionId', 'videoId', 'addedAt'],
-		requiredAttributes: ['collectionId', 'videoId', 'addedAt']
-	},
-	collection_summaries: {
-		attributes: [
-			'collectionId',
-			'title',
-			'body',
-			'keyTakeaway',
-			'videoIds',
-			'generatedAt',
-			'isStale'
-		],
-		requiredAttributes: ['collectionId', 'title', 'body', 'keyTakeaway', 'videoIds', 'generatedAt']
 	}
 };
 
