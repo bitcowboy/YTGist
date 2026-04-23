@@ -127,7 +127,7 @@ const methodThree = async (videoId: string) => {
           const timestamp = s.start_time_text?.text || formatTimestamp(parseInt(s.start_ms));
           return `[${timestamp}] ${text}`;
         })
-        .join(' ');
+        .join('\n');
       return transcript;
     }
 

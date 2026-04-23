@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Logo from '$lib/components/shared/logo.svelte';
 	import DownloadIcon from '@lucide/svelte/icons/download';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import BanIcon from '@lucide/svelte/icons/ban';
 import { page } from '$app/state';
@@ -101,6 +102,7 @@ onMount(() => {
 	
 	// State for download button
 	let isDownloading = $state(false);
+	let isDownloadingRaw = $state(false);
 
 	// State for block button
 	let isBlocking = $state(false);
@@ -154,6 +156,35 @@ onMount(() => {
 			alert('Failed to download transcript. Please try again.');
 		} finally {
 			isDownloading = false;
+		}
+	}
+
+	// Function to download raw transcript (no AI formatting)
+	async function downloadRawTranscript() {
+		const videoId = page.url.searchParams.get('v');
+		if (!videoId || isDownloadingRaw) return;
+
+		isDownloadingRaw = true;
+
+		try {
+			const response = await fetch(`/api/download-transcript?v=${videoId}`);
+			if (!response.ok) {
+				throw new Error('Failed to download raw transcript');
+			}
+			const blob = await response.blob();
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `transcript-${videoId}.txt`;
+			document.body.appendChild(a);
+			a.click();
+			window.URL.revokeObjectURL(url);
+			document.body.removeChild(a);
+		} catch (error) {
+			console.error('Error downloading raw transcript:', error);
+			alert('Failed to download raw transcript. Please try again.');
+		} finally {
+			isDownloadingRaw = false;
 		}
 	}
 
@@ -254,7 +285,7 @@ onMount(() => {
 			{#if showDownloadButton()}
 				<button
 					onclick={downloadTranscript}
-                    disabled={isDownloading || hasSubtitles !== true}
+					disabled={isDownloading || isDownloadingRaw || hasSubtitles !== true}
 					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-blue-500/10 text-zinc-300 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
 					title="Download formatted transcript with AI formatting"
 				>
@@ -262,6 +293,17 @@ onMount(() => {
 						class="h-4 w-4 transition-colors duration-200 group-hover:text-blue-500 {isDownloading ? 'animate-pulse' : ''}"
 					/>
 					<span class="hidden sm:block">{isDownloading ? 'Processing...' : 'Transcript'}</span>
+				</button>
+				<button
+					onclick={downloadRawTranscript}
+					disabled={isDownloadingRaw || isDownloading || hasSubtitles !== true}
+					class="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 hover:scale-105 hover:bg-blue-500/10 text-zinc-300 hover:text-blue-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+					title="Download raw transcript without AI formatting"
+				>
+					<FileTextIcon
+						class="h-4 w-4 transition-colors duration-200 group-hover:text-blue-500 {isDownloadingRaw ? 'animate-pulse' : ''}"
+					/>
+					<span class="hidden sm:block">{isDownloadingRaw ? 'Downloading...' : 'Raw'}</span>
 				</button>
 			{/if}
 
