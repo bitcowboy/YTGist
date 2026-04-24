@@ -5,6 +5,9 @@
 
 import { OPENROUTER_MODEL, USE_JSON_SCHEMA } from '$env/static/private';
 
+/** Xiaomi Mimo v2.5 (OpenRouter): disable thinking mode per provider request body. */
+export const OPENROUTER_NO_REASONING = { thinking: { type: 'disabled' as const } };
+
 // Models that support JSON schema response_format
 const SCHEMA_SUPPORTED_MODELS = [
 	'openai/gpt-4o',
@@ -175,6 +178,7 @@ export function createApiRequestOptions(
 	const baseOptions = {
 		model: OPENROUTER_MODEL,
 		messages: [...messages],
+		...OPENROUTER_NO_REASONING,
 	};
 	
 	if (supportsJsonSchema() && schema) {

@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import type { FullSummaryData, ChatMessage } from '$lib/types';
 import * as undici from 'undici';
 import { getTranscriptByVideoId } from './database.js';
+import { OPENROUTER_NO_REASONING } from './ai-compatibility.js';
 
 // 流式聊天响应的事件发射器接口
 export interface ChatStreamEmitters {
@@ -135,6 +136,7 @@ ${videoContext}
 		const response = await openai.chat.completions.create({
 			model: OPENROUTER_MODEL,
 			messages,
+			...OPENROUTER_NO_REASONING,
 		});
 
 		const content = response.choices[0].message.content;
@@ -245,6 +247,7 @@ ${videoContext}
 			model: OPENROUTER_MODEL,
 			messages,
 			stream: true,
+			...OPENROUTER_NO_REASONING,
 		});
 
 		// 处理流式响应

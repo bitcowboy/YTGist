@@ -15,7 +15,7 @@ import { ID, Query } from 'node-appwrite';
 import OpenAI from 'openai';
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL } from '$env/static/private';
 import prompt from '$lib/server/prompt.md?raw';
-import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
+import { createApiRequestOptions, parseJsonResponse, OPENROUTER_NO_REASONING } from './ai-compatibility.js';
 import StreamJson from 'stream-json';
 
 /**
@@ -456,6 +456,7 @@ export const generateVideoSummaryStream = async (
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
+                ...OPENROUTER_NO_REASONING,
             } as any);
 
             let buffer = '';
