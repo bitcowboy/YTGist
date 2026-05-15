@@ -109,6 +109,8 @@ onMount(() => {
 			const urlVideoId = urlParams.get('v');
 			const urlPlatform = urlParams.get('platform') || 'youtube';
 			const urlSubtitleUrl = urlParams.get('subtitle_url') || undefined;
+			const thinkingParam = urlParams.get('thinking');
+			const urlThinking = thinkingParam === '1' || thinkingParam === 'true';
 			if (!urlVideoId) {
 				error = 'No video ID found in the URL. Please make sure the URL is correct.';
 				return;
@@ -262,7 +264,7 @@ onMount(() => {
                     isNoSubtitlesError = false;
                     window.dispatchEvent(new CustomEvent('yg:hasSubtitles', { detail: { hasSubtitles: false } }));
                 }
-            }, urlSubtitleUrl);
+            }, urlSubtitleUrl, urlThinking);
             })();
             /* Previous non-streaming fallback retained (commented for reference)
             fetchWithNonce(buildApiUrl('/api/get-summary', urlVideoId, urlPlatform))

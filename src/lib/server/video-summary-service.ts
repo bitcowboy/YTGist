@@ -294,7 +294,8 @@ export const generateVideoSummaryStream = async (
     videoId: string,
     platform: VideoPlatform = 'youtube',
     emitters: StreamEmitters = {},
-    subtitleUrl?: string
+    subtitleUrl?: string,
+    thinking?: boolean
 ): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
@@ -383,7 +384,7 @@ export const generateVideoSummaryStream = async (
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                ...summaryReasoningOptions(),
+                ...summaryReasoningOptions(thinking),
             } as any);
 
             let buffer = '';

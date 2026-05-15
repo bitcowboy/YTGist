@@ -18,6 +18,16 @@
           选中时使用本地调试服务器 (localhost:5173)，否则使用远程服务器 (host.996007.fun:4173)
         </p>
       </div>
+      <div class="setting-item">
+        <label class="checkbox-label">
+          <input type="checkbox" id="thinking-mode" />
+          <span class="checkmark"></span>
+          <span class="label-text">Thinking 模式</span>
+        </label>
+        <p class="setting-description">
+          选中时在 Gist URL 上附加 <code>thinking=1</code>，启用模型的思考模式；默认关闭。
+        </p>
+      </div>
       <div id="status" class="message hidden"></div>
     </main>
     <script src="popup.js" type="module"></script>

@@ -26,7 +26,8 @@ export const openSummaryStream = async (
 	videoId: string,
 	platform: VideoPlatform = 'youtube',
 	handlers: SummaryStreamHandlers = {},
-	subtitleUrl?: string
+	subtitleUrl?: string,
+	thinking: boolean = false
 ): Promise<SummaryStreamController> => {
 	const nonce = await fetchNonce();
 	const url = new URL('/api/get-summary', window.location.origin);
@@ -36,6 +37,9 @@ export const openSummaryStream = async (
 	}
 	if (subtitleUrl) {
 		url.searchParams.set('subtitle_url', subtitleUrl);
+	}
+	if (thinking) {
+		url.searchParams.set('thinking', '1');
 	}
 	url.searchParams.set('nonce', nonce);
 
