@@ -2,89 +2,102 @@ import { json } from '@sveltejs/kit';
 import { pb, ensureAdminAuth } from '$lib/server/pocketbase.js';
 import type { RequestHandler } from './$types.js';
 
-type SchemaField = {
-    name: string;
-    type: 'text' | 'bool' | 'number' | 'date';
-    required?: boolean;
-    options?: Record<string, unknown>;
-};
+// `created`/`updated` are plain date fields (not autodate) so writes can
+// preserve original timestamps when needed. The app sets them via
+// withCreatedTimestamps / withUpdatedTimestamp on every write.
+const TIMESTAMP_FIELDS = [
+    { name: 'created', type: 'date' },
+    { name: 'updated', type: 'date' }
+];
 
 type CollectionSpec = {
     name: string;
-    schema: SchemaField[];
+    type: 'base';
+    fields: Array<Record<string, unknown>>;
     indexes?: string[];
 };
 
 const COLLECTION_SPECS: CollectionSpec[] = [
     {
         name: 'summaries',
-        schema: [
-            { name: 'videoId', type: 'text', required: true, options: { max: 50 } },
-            { name: 'platform', type: 'text', required: true, options: { max: 20 } },
-            { name: 'channelId', type: 'text', options: { max: 50 } },
-            { name: 'title', type: 'text', required: true, options: { max: 200 } },
-            { name: 'author', type: 'text', options: { max: 150 } },
-            { name: 'publishedAt', type: 'text', options: { max: 30 } },
+        type: 'base',
+        fields: [
+            { name: 'videoId', type: 'text', required: true, max: 50 },
+            { name: 'platform', type: 'text', required: true, max: 20 },
+            { name: 'channelId', type: 'text', max: 50 },
+            { name: 'title', type: 'text', required: true, max: 200 },
+            { name: 'author', type: 'text', max: 150 },
+            { name: 'publishedAt', type: 'text', max: 30 },
             { name: 'hasSubtitles', type: 'bool' },
-            { name: 'description', type: 'text', options: { max: 2000 } },
-            { name: 'hits', type: 'number' }
+            { name: 'description', type: 'text', max: 3000 },
+            { name: 'hits', type: 'number' },
+            ...TIMESTAMP_FIELDS
         ],
         indexes: [
-            'CREATE UNIQUE INDEX idx_summaries_videoId_platform ON summaries (videoId, platform)',
-            'CREATE INDEX idx_summaries_channelId ON summaries (channelId)',
-            'CREATE INDEX idx_summaries_publishedAt ON summaries (publishedAt)',
-            'CREATE INDEX idx_summaries_platform ON summaries (platform)'
+            'CREATE UNIQUE INDEX `idx_summaries_videoId_platform` ON `summaries` (`videoId`, `platform`)',
+            'CREATE INDEX `idx_summaries_channelId` ON `summaries` (`channelId`)',
+            'CREATE INDEX `idx_summaries_platform` ON `summaries` (`platform`)'
         ]
     },
     {
         name: 'video_summaries',
-        schema: [
-            { name: 'videoId', type: 'text', required: true, options: { max: 50 } },
-            { name: 'platform', type: 'text', required: true, options: { max: 20 } },
-            { name: 'summary', type: 'text', required: true, options: { max: 5000 } }
+        type: 'base',
+        fields: [
+            { name: 'videoId', type: 'text', required: true, max: 50 },
+            { name: 'platform', type: 'text', required: true, max: 20 },
+            { name: 'summary', type: 'text', required: true, max: 5000 },
+            ...TIMESTAMP_FIELDS
         ],
-        indexes: ['CREATE UNIQUE INDEX idx_video_summaries_videoId_platform ON video_summaries (videoId, platform)']
+        indexes: ['CREATE UNIQUE INDEX `idx_video_summaries_videoId_platform` ON `video_summaries` (`videoId`, `platform`)']
     },
     {
         name: 'video_key_insights',
-        schema: [
-            { name: 'videoId', type: 'text', required: true, options: { max: 50 } },
-            { name: 'platform', type: 'text', required: true, options: { max: 20 } },
-            { name: 'keyTakeaway', type: 'text', required: true, options: { max: 600 } },
-            { name: 'keyPoints', type: 'text', required: true, options: { max: 4000 } },
-            { name: 'coreTerms', type: 'text', options: { max: 2000 } }
+        type: 'base',
+        fields: [
+            { name: 'videoId', type: 'text', required: true, max: 50 },
+            { name: 'platform', type: 'text', required: true, max: 20 },
+            { name: 'keyTakeaway', type: 'text', required: true, max: 600 },
+            { name: 'keyPoints', type: 'text', required: true, max: 4000 },
+            { name: 'coreTerms', type: 'text', max: 3000 },
+            ...TIMESTAMP_FIELDS
         ],
-        indexes: ['CREATE UNIQUE INDEX idx_video_key_insights_videoId_platform ON video_key_insights (videoId, platform)']
+        indexes: ['CREATE UNIQUE INDEX `idx_video_key_insights_videoId_platform` ON `video_key_insights` (`videoId`, `platform`)']
     },
     {
         name: 'video_comments_analysis',
-        schema: [
-            { name: 'videoId', type: 'text', required: true, options: { max: 50 } },
-            { name: 'platform', type: 'text', required: true, options: { max: 20 } },
-            { name: 'commentsSummary', type: 'text', options: { max: 1000 } },
-            { name: 'commentsKeyPoints', type: 'text', options: { max: 2000 } },
-            { name: 'commentsCount', type: 'number' }
+        type: 'base',
+        fields: [
+            { name: 'videoId', type: 'text', required: true, max: 50 },
+            { name: 'platform', type: 'text', required: true, max: 20 },
+            { name: 'commentsSummary', type: 'text', max: 1000 },
+            { name: 'commentsKeyPoints', type: 'text', max: 3000 },
+            { name: 'commentsCount', type: 'number' },
+            ...TIMESTAMP_FIELDS
         ],
-        indexes: ['CREATE UNIQUE INDEX idx_video_comments_analysis_videoId_platform ON video_comments_analysis (videoId, platform)']
+        indexes: ['CREATE UNIQUE INDEX `idx_video_comments_analysis_videoId_platform` ON `video_comments_analysis` (`videoId`, `platform`)']
     },
     {
         name: 'transcripts',
-        schema: [
-            { name: 'videoId', type: 'text', required: true, options: { max: 255 } },
-            { name: 'platform', type: 'text', options: { max: 50 } },
-            { name: 'transcript', type: 'text', required: true, options: { max: 50000 } },
-            { name: 'language', type: 'text', options: { max: 10 } }
+        type: 'base',
+        fields: [
+            { name: 'videoId', type: 'text', required: true, max: 255 },
+            { name: 'platform', type: 'text', max: 50 },
+            { name: 'transcript', type: 'text', required: true, max: 200000 },
+            { name: 'language', type: 'text', max: 10 },
+            ...TIMESTAMP_FIELDS
         ],
-        indexes: ['CREATE UNIQUE INDEX idx_transcripts_videoId ON transcripts (videoId)']
+        indexes: ['CREATE UNIQUE INDEX `idx_transcripts_videoId` ON `transcripts` (`videoId`)']
     },
     {
         name: 'blocked_channels',
-        schema: [
-            { name: 'channelId', type: 'text', required: true, options: { max: 255 } },
-            { name: 'channelName', type: 'text', required: true, options: { max: 500 } },
-            { name: 'blockedAt', type: 'date', required: true }
+        type: 'base',
+        fields: [
+            { name: 'channelId', type: 'text', required: true, max: 255 },
+            { name: 'channelName', type: 'text', required: true, max: 500 },
+            { name: 'blockedAt', type: 'date' },
+            ...TIMESTAMP_FIELDS
         ],
-        indexes: ['CREATE UNIQUE INDEX idx_blocked_channels_channelId ON blocked_channels (channelId)']
+        indexes: ['CREATE UNIQUE INDEX `idx_blocked_channels_channelId` ON `blocked_channels` (`channelId`)']
     }
 ];
 
@@ -109,19 +122,19 @@ export const POST: RequestHandler = async () => {
                 const existing = await findCollection(spec.name);
 
                 if (existing) {
-                    const existingNames = new Set((existing.schema as any[]).map((f) => f.name));
-                    const missing = spec.schema.filter((f) => !existingNames.has(f.name));
+                    const existingNames = new Set((existing.fields as any[]).map((f) => f.name));
+                    const missing = spec.fields.filter((f: any) => !existingNames.has(f.name));
 
                     if (missing.length > 0) {
-                        const mergedSchema = [...(existing.schema as any[]), ...missing];
+                        const mergedFields = [...(existing.fields as any[]), ...missing];
                         await pb.collections.update(existing.id, {
-                            schema: mergedSchema,
+                            fields: mergedFields,
                             indexes: spec.indexes ?? existing.indexes
                         });
                         results.push({
                             name: spec.name,
                             status: 'updated',
-                            message: `Added missing fields: ${missing.map((f) => f.name).join(', ')}`
+                            message: `Added missing fields: ${missing.map((f: any) => f.name).join(', ')}`
                         });
                     } else {
                         results.push({
@@ -133,13 +146,7 @@ export const POST: RequestHandler = async () => {
                     continue;
                 }
 
-                await pb.collections.create({
-                    name: spec.name,
-                    type: 'base',
-                    schema: spec.schema,
-                    indexes: spec.indexes ?? []
-                });
-
+                await pb.collections.create(spec);
                 console.log(`✅ Created collection: ${spec.name}`);
                 results.push({
                     name: spec.name,

@@ -1,4 +1,4 @@
-import { pb, ensureAdminAuth, escapeFilterValue } from './pocketbase.js';
+import { pb, ensureAdminAuth, escapeFilterValue, withCreatedTimestamps, withUpdatedTimestamp } from './pocketbase.js';
 import type {
     SummaryData,
     VideoSummaryContent,
@@ -176,7 +176,7 @@ export const createSummary = async (summaryData: {
         hits: 0
     };
 
-    const mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainPayload);
+    const mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(withCreatedTimestamps(mainPayload));
 
     // 2. 创建摘要内容子表数据
     const summaryContentPayload = {
@@ -185,7 +185,7 @@ export const createSummary = async (summaryData: {
         summary: clamp(summaryData.summary, 5000)
     };
 
-    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentPayload);
+    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(withCreatedTimestamps(summaryContentPayload));
 
     // 3. 创建关键要点子表数据
     const keyInsightsPayload = {
@@ -196,7 +196,7 @@ export const createSummary = async (summaryData: {
         coreTerms: safeCoreTerms
     };
 
-    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsPayload as any);
+    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(withCreatedTimestamps(keyInsightsPayload) as any);
 
     // 4. 创建评论分析子表数据
     const commentsPayload = {
@@ -207,7 +207,7 @@ export const createSummary = async (summaryData: {
         commentsCount: summaryData.commentsCount || 0
     };
 
-    await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsPayload as any);
+    await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(withCreatedTimestamps(commentsPayload) as any);
 
     // 解析 JSON 字符串回数组的辅助函数
     const parseJsonArray = (jsonStr: string): string[] => {
@@ -247,7 +247,7 @@ export const updateSummary = async (videoId: string, platform: VideoPlatform = '
         throw new Error('Summary not found');
     }
     await ensureAdminAuth();
-    return await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existing.id, updateData);
+    return await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existing.id, withUpdatedTimestamp(updateData));
 };
 
 // 更新视频摘要内容
@@ -256,12 +256,12 @@ export const updateVideoSummaryContent = async (videoId: string, platform: Video
     await ensureAdminAuth();
     if (!existing) {
         return await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(
-            { videoId, platform, summary: summary.slice(0, 5000) }
+            withCreatedTimestamps({ videoId, platform, summary: summary.slice(0, 5000) })
         );
     }
     return await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(
         existing.id,
-        { summary: summary.slice(0, 5000) }
+        withUpdatedTimestamp({ summary: summary.slice(0, 5000) })
     );
 };
 
@@ -282,10 +282,10 @@ export const updateVideoKeyInsights = async (videoId: string, platform: VideoPla
 
     if (!existing) {
         return await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(
-            { videoId, platform, ...payload }
+            withCreatedTimestamps({ videoId, platform, ...payload })
         );
     }
-    return await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existing.id, payload);
+    return await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existing.id, withUpdatedTimestamp(payload));
 };
 
 // 更新评论分析
@@ -305,10 +305,10 @@ export const updateVideoCommentsAnalysis = async (videoId: string, platform: Vid
 
     if (!existing) {
         return await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(
-            { videoId, platform, ...payload }
+            withCreatedTimestamps({ videoId, platform, ...payload })
         );
     }
-    return await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existing.id, payload);
+    return await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existing.id, withUpdatedTimestamp(payload));
 };
 
 export const incrementSummaryHits = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<SummaryData> => {
@@ -319,7 +319,7 @@ export const incrementSummaryHits = async (videoId: string, platform: VideoPlatf
     await ensureAdminAuth();
     return await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(
         existing.id,
-        { hits: (existing.hits || 0) + 1 }
+        withUpdatedTimestamp({ hits: (existing.hits || 0) + 1 })
     );
 };
 
@@ -335,9 +335,9 @@ export const upsertTranscript = async (
             `videoId = "${escapeFilterValue(videoId)}"`
         );
         if (existing) {
-            return await pb.collection(COLLECTIONS.TRANSCRIPTS).update(existing.id, { transcript });
+            return await pb.collection(COLLECTIONS.TRANSCRIPTS).update(existing.id, withUpdatedTimestamp({ transcript }));
         }
-        return await pb.collection(COLLECTIONS.TRANSCRIPTS).create({ videoId, transcript });
+        return await pb.collection(COLLECTIONS.TRANSCRIPTS).create(withCreatedTimestamps({ videoId, transcript }));
     } catch (error) {
         console.error('Failed to upsert transcript:', error);
         throw error;
@@ -412,11 +412,11 @@ export const addBlockedChannel = async (channelId: string, channelName: string):
         // 在添加到block list之前，先清除该频道的所有数据
         await clearChannelData(channelId);
 
-        return await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).create<BlockedChannel>({
+        return await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).create<BlockedChannel>(withCreatedTimestamps({
             channelId,
             channelName,
             blockedAt: new Date().toISOString()
-        });
+        }));
     } catch (error) {
         console.error('Failed to add blocked channel:', error);
         throw error;

@@ -4,7 +4,7 @@ import { generateVideoSummary, generateVideoSummaryStream } from '$lib/server/vi
 import { PlatformFactory } from '$lib/server/platforms/platform-factory';
 import type { VideoPlatform, SummaryData, FullSummaryData } from '$lib/types';
 import { error, json } from '@sveltejs/kit';
-import { pb, ensureAdminAuth, escapeFilterValue } from '$lib/server/pocketbase.js';
+import { pb, ensureAdminAuth, escapeFilterValue, withCreatedTimestamps, withUpdatedTimestamp } from '$lib/server/pocketbase.js';
 import { getFullSummary, COLLECTIONS } from '$lib/server/database.js';
 
 export const GET = async ({ url }) => {
@@ -206,31 +206,31 @@ export const GET = async ({ url }) => {
 
                 const existingMain = await pb.collection(COLLECTIONS.SUMMARIES).getList<SummaryData>(1, 1, { filter });
                 if (existingMain.totalItems > 0) {
-                    await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
+                    await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, withUpdatedTimestamp(mainData));
                 } else {
-                    await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
+                    await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(withCreatedTimestamps(mainData));
                 }
 
                 // 创建空的摘要内容子表
                 const existingSummary = await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).getList(1, 1, { filter });
                 if (existingSummary.totalItems === 0) {
-                    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create({
+                    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create(withCreatedTimestamps({
                         videoId: safeVideoId,
                         platform: platform,
                         summary: ''
-                    });
+                    }));
                 }
 
                 // 创建空的关键要点子表
                 const existingInsights = await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).getList(1, 1, { filter });
                 if (existingInsights.totalItems === 0) {
-                    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create({
+                    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create(withCreatedTimestamps({
                         videoId: safeVideoId,
                         platform: platform,
                         keyTakeaway: '',
                         keyPoints: '[]',  // JSON 字符串格式
                         coreTerms: '[]'   // JSON 字符串格式
-                    });
+                    }));
                 }
             } catch (persistErr) {
                 console.warn('Failed to persist no-subtitles placeholder:', persistErr);

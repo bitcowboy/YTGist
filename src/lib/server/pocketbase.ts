@@ -25,3 +25,14 @@ export const ensureAdminAuth = async (): Promise<void> => {
 };
 
 export const escapeFilterValue = (value: string): string => value.replace(/"/g, '\\"');
+
+// PocketBase collections use plain `date` fields named `created`/`updated`
+// (not autodate), so the app has to set them explicitly on every write.
+export const withCreatedTimestamps = <T extends object>(data: T): T & { created: string; updated: string } => {
+    const now = new Date().toISOString();
+    return { ...data, created: now, updated: now };
+};
+
+export const withUpdatedTimestamp = <T extends object>(data: T): T & { updated: string } => {
+    return { ...data, updated: new Date().toISOString() };
+};

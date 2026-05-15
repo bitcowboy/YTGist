@@ -1,4 +1,4 @@
-import { pb, ensureAdminAuth, escapeFilterValue } from '$lib/server/pocketbase.js';
+import { pb, ensureAdminAuth, escapeFilterValue, withCreatedTimestamps, withUpdatedTimestamp } from '$lib/server/pocketbase.js';
 import {
     upsertTranscript,
     isChannelBlocked,
@@ -180,30 +180,30 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
 
         // 保存主表
         if (existingMain.totalItems > 0) {
-            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, withUpdatedTimestamp(mainData));
         } else {
-            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(withCreatedTimestamps(mainData));
         }
 
         // 保存摘要内容子表
         if (existingSummary.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, summaryContentData);
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, withUpdatedTimestamp(summaryContentData));
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentData);
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(withCreatedTimestamps(summaryContentData));
         }
 
         // 保存关键要点子表
         if (existingInsights.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, keyInsightsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, withUpdatedTimestamp(keyInsightsData) as any);
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(withCreatedTimestamps(keyInsightsData) as any);
         }
 
         // 保存评论分析子表
         if (existingComments.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, commentsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, withUpdatedTimestamp(commentsData) as any);
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(withCreatedTimestamps(commentsData) as any);
         }
 
         // 组合完整数据（需要将 JSON 字符串解析回数组）
@@ -878,30 +878,30 @@ export const generateVideoSummaryStream = async (
 
         // 保存主表
         if (existingMain.totalItems > 0) {
-            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, withUpdatedTimestamp(mainData));
         } else {
-            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(withCreatedTimestamps(mainData));
         }
 
         // 保存摘要内容子表
         if (existingSummary.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, summaryContentData);
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, withUpdatedTimestamp(summaryContentData));
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentData);
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(withCreatedTimestamps(summaryContentData));
         }
 
         // 保存关键要点子表
         if (existingInsights.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, keyInsightsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, withUpdatedTimestamp(keyInsightsData) as any);
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(withCreatedTimestamps(keyInsightsData) as any);
         }
 
         // 保存评论分析子表
         if (existingComments.totalItems > 0) {
-            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, commentsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, withUpdatedTimestamp(commentsData) as any);
         } else {
-            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsData as any);
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(withCreatedTimestamps(commentsData) as any);
         }
 
         // 组合完整数据（需要将 JSON 字符串解析回数组）

@@ -43,12 +43,12 @@ export const POST: RequestHandler = async () => {
                     throw err;
                 }
 
-                const schema = [...((collection.schema as any[]) || [])];
+                const fields = [...(((collection as any).fields as any[]) || [])];
                 const collectionResults: any[] = [];
                 let dirty = false;
 
                 for (const [attrName, newSize] of Object.entries(updates)) {
-                    const field = schema.find((f) => f.name === attrName);
+                    const field = fields.find((f) => f.name === attrName);
                     if (!field) {
                         collectionResults.push({
                             attribute: attrName,
@@ -58,7 +58,7 @@ export const POST: RequestHandler = async () => {
                         continue;
                     }
 
-                    const currentSize = field.options?.max;
+                    const currentSize = field.max;
                     if (currentSize === newSize) {
                         collectionResults.push({
                             attribute: attrName,
@@ -70,7 +70,7 @@ export const POST: RequestHandler = async () => {
                         continue;
                     }
 
-                    field.options = { ...(field.options || {}), max: newSize };
+                    field.max = newSize;
                     dirty = true;
                     collectionResults.push({
                         attribute: attrName,
@@ -82,8 +82,8 @@ export const POST: RequestHandler = async () => {
                 }
 
                 if (dirty) {
-                    await pb.collections.update(collection.id, { schema });
-                    console.log(`  ✅ Schema updated for ${collectionName}`);
+                    await pb.collections.update(collection.id, { fields });
+                    console.log(`  ✅ Fields updated for ${collectionName}`);
                 }
 
                 results.push({

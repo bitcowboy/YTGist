@@ -61,8 +61,8 @@ export const GET: RequestHandler = async () => {
                 continue;
             }
 
-            const schema = (collection.schema as any[]) || [];
-            const attributeNames = schema.map((f) => f.name);
+            const fields = ((collection as any).fields as any[]) || [];
+            const attributeNames = fields.map((f) => f.name);
 
             const missingAttributes = expected.attributes.filter((attr) => !attributeNames.includes(attr));
             const extraAttributes = attributeNames.filter((attr) => !expected.attributes.includes(attr));
@@ -84,11 +84,11 @@ export const GET: RequestHandler = async () => {
                 missingAttributes,
                 missingRequired,
                 extraAttributes,
-                attributes: schema.map((f: any) => ({
+                attributes: fields.map((f: any) => ({
                     key: f.name,
                     type: f.type,
                     required: f.required,
-                    options: f.options,
+                    max: f.max,
                     status: expected.attributes.includes(f.name) ? 'expected' : 'extra'
                 }))
             });
