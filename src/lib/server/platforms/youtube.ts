@@ -1,4 +1,4 @@
-import { YOUTUBE_DATA_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import type { VideoMeta, Comment, CommentsData, VideoPlatform } from '$lib/types';
 import type { VideoPlatformInterface } from './base';
 import { getTranscript as getYouTubeTranscript } from '../transcript';
@@ -44,7 +44,7 @@ export class YouTubePlatform implements VideoPlatformInterface {
 
 	async getVideoData(videoId: string, subtitleUrl?: string): Promise<VideoMeta> {
 		// YouTube平台不使用subtitleUrl参数，忽略它
-		if (!YOUTUBE_DATA_API_KEY) {
+		if (!env.YOUTUBE_DATA_API_KEY) {
 			throw new Error('YouTube Data API key is required but not configured');
 		}
 
@@ -58,7 +58,7 @@ export class YouTubePlatform implements VideoPlatformInterface {
 				const stepStart = Date.now();
 				try {
 					const response = await fetch(
-						`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${YOUTUBE_DATA_API_KEY}`
+						`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${env.YOUTUBE_DATA_API_KEY}`
 					);
 					if (!response.ok) {
 						throw new Error(`YouTube API error: ${response.status}`);
@@ -189,12 +189,12 @@ export class YouTubePlatform implements VideoPlatformInterface {
 	}
 
 	async getVideoDataWithoutTranscript(videoId: string): Promise<Omit<VideoMeta, 'transcript'>> {
-		if (!YOUTUBE_DATA_API_KEY) {
+		if (!env.YOUTUBE_DATA_API_KEY) {
 			throw new Error('YouTube Data API key is required but not configured');
 		}
 
 		const response = await fetch(
-			`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${YOUTUBE_DATA_API_KEY}`
+			`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${env.YOUTUBE_DATA_API_KEY}`
 		);
 
 		if (!response.ok) {

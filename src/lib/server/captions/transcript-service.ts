@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PROXY_URI } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { normalizeProxyUrl } from './proxy.js';
 import { convertToYouTubeSegments, parseYoutubeJson3, type YouTubeSegment } from './transcript-parser.js';
 
@@ -78,8 +78,8 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       `https://www.youtube.com/watch?v=${videoId}`,
     ];
 
-    if (PROXY_URI?.trim()) {
-      args.unshift('--proxy', normalizeProxyUrl(PROXY_URI.trim()));
+    if (env.PROXY_URI?.trim()) {
+      args.unshift('--proxy', normalizeProxyUrl(env.PROXY_URI.trim()));
     }
 
     const { code, stderr } = await new Promise<{ code: number; stderr: string }>((resolve, reject) => {

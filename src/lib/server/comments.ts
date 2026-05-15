@@ -1,4 +1,4 @@
-import { YOUTUBE_DATA_API_KEY } from "$env/static/private";
+import { env } from '$env/dynamic/private';
 
 export interface Comment {
     id: string;
@@ -16,12 +16,12 @@ export interface CommentsData {
 
 
 const getCommentsWithYouTubeAPI = async (videoId: string, maxResults: number = 50): Promise<CommentsData> => {
-    if (!YOUTUBE_DATA_API_KEY) {
+    if (!env.YOUTUBE_DATA_API_KEY) {
         throw new Error('YouTube Data API key not available');
     }
 
     const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=${maxResults}&order=relevance&key=${YOUTUBE_DATA_API_KEY}`
+        `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=${maxResults}&order=relevance&key=${env.YOUTUBE_DATA_API_KEY}`
     );
 
     if (!response.ok) {
@@ -51,7 +51,7 @@ const getCommentsWithYouTubeAPI = async (videoId: string, maxResults: number = 5
 
 
 export const getComments = async (videoId: string, maxResults: number = 50): Promise<CommentsData> => {
-    if (!YOUTUBE_DATA_API_KEY) {
+    if (!env.YOUTUBE_DATA_API_KEY) {
         console.warn('YouTube Data API key not available, returning empty comments');
         return { comments: [], totalCount: 0 };
     }

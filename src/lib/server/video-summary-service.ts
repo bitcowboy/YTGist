@@ -12,7 +12,7 @@ import { getSummary } from '$lib/server/summary.js';
 import { getVideoData } from '$lib/server/videoData.js';
 import type { SummaryData, FullSummaryData, VideoPlatform, VideoSummaryContent, VideoKeyInsights, VideoCommentsAnalysis } from '$lib/types.js';
 import OpenAI from 'openai';
-import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import prompt from '$lib/server/prompt.md?raw';
 import { createApiRequestOptions, parseJsonResponse, OPENROUTER_NO_REASONING } from './ai-compatibility.js';
 import StreamJson from 'stream-json';
@@ -270,8 +270,8 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
 
 // Streaming support
 const openai = new OpenAI({
-    baseURL: OPENROUTER_BASE_URL,
-    apiKey: OPENROUTER_API_KEY,
+    baseURL: env.OPENROUTER_BASE_URL,
+    apiKey: env.OPENROUTER_API_KEY,
     defaultHeaders: {
         'HTTP-Referer': 'https://gisttube.com',
         'X-Title': 'gisttube',
@@ -376,7 +376,7 @@ export const generateVideoSummaryStream = async (
             console.log(`📊 Video ${videoId} - LLM request initiated at ${llmRequestStart}`);
             
             const stream = await openai.chat.completions.create({
-                model: OPENROUTER_MODEL,
+                model: env.OPENROUTER_MODEL,
                 stream: true,
                 messages: [
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },

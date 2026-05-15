@@ -1,4 +1,4 @@
-import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import OpenAI from 'openai';
 import type { FullSummaryData, ChatMessage } from '$lib/types';
 import * as undici from 'undici';
@@ -13,11 +13,11 @@ export interface ChatStreamEmitters {
 }
 
 // Only create proxy agent if PROXY_URI is available
-const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
+const proxyAgent = env.PROXY_URI ? new undici.ProxyAgent(env.PROXY_URI) : null;
 
 const openai = new OpenAI({
-	baseURL: OPENROUTER_BASE_URL,
-	apiKey: OPENROUTER_API_KEY,
+	baseURL: env.OPENROUTER_BASE_URL,
+	apiKey: env.OPENROUTER_API_KEY,
 	defaultHeaders: {
 		'HTTP-Referer': 'https://gisttube.com',
 		'X-Title': 'gisttube',
@@ -134,7 +134,7 @@ ${videoContext}
 		});
 
 		const response = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
+			model: env.OPENROUTER_MODEL,
 			messages,
 			...OPENROUTER_NO_REASONING,
 		});
@@ -244,7 +244,7 @@ ${videoContext}
 
 		// 创建流式请求
 		const stream = await openai.chat.completions.create({
-			model: OPENROUTER_MODEL,
+			model: env.OPENROUTER_MODEL,
 			messages,
 			stream: true,
 			...OPENROUTER_NO_REASONING,

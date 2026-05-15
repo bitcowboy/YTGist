@@ -1,10 +1,10 @@
-import { FREE_TRANSCRIPT_ENDPOINT, PROXY_URI } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { ProxyAgent } from 'undici';
 import { fetchTranscriptForVideo } from './captions/transcript-service';
 import { formatTimestamp } from './captions/transcript-parser';
 
 // Only create proxy agent if PROXY_URI is available
-const proxyAgent = PROXY_URI ? new ProxyAgent(PROXY_URI) : null;
+const proxyAgent = env.PROXY_URI ? new ProxyAgent(env.PROXY_URI) : null;
 
 /** yt-dlp can take a long time (many langs + --sleep-subtitles). Override with TRANSCRIPT_YTDLP_TIMEOUT_MS. */
 const methodThreeTimeoutMs = () => {
@@ -24,7 +24,7 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
 
 export const getTranscript = async (videoId: string) => {
     // If FREE_TRANSCRIPT_ENDPOINT is not available, go straight to methodThree
-    if (!FREE_TRANSCRIPT_ENDPOINT) {
+    if (!env.FREE_TRANSCRIPT_ENDPOINT) {
         console.log('FREE_TRANSCRIPT_ENDPOINT not available, using methodThree');
         try {
             const ytdlpMs = methodThreeTimeoutMs();
@@ -92,7 +92,7 @@ const methodOne = async (videoId: string, useProxy = false, langCode = "en") => 
         options.dispatcher = proxyAgent;
     }
 
-    const res = await fetch(FREE_TRANSCRIPT_ENDPOINT, options);
+    const res = await fetch(env.FREE_TRANSCRIPT_ENDPOINT, options);
     
     if (!res.ok) {
         throw new Error(`Transcript API error: ${res.status}`);

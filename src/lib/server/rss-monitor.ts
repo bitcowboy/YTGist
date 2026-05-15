@@ -1,6 +1,6 @@
 import Parser from 'rss-parser';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { PROXY_URI } from "$env/static/private";
+import { env } from '$env/dynamic/private';
 
 export interface RSSVideo {
     videoId: string;
@@ -71,12 +71,12 @@ const createRSSParser = (): Parser => {
     };
 
     // 如果配置了代理，设置代理
-    if (PROXY_URI) {
-        const proxyAgent = new HttpsProxyAgent(PROXY_URI);
+    if (env.PROXY_URI) {
+        const proxyAgent = new HttpsProxyAgent(env.PROXY_URI);
         parserConfig.requestOptions = {
             agent: proxyAgent
         };
-        console.log(`RSS parser using proxy: ${PROXY_URI}`);
+        console.log(`RSS parser using proxy: ${env.PROXY_URI}`);
     }
 
     const parser = new Parser(parserConfig);

@@ -1,15 +1,15 @@
-import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL, PROXY_URI } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import OpenAI from 'openai';
 import type { Comment } from './comments.js';
 import * as undici from 'undici';
 import { createApiRequestOptions, parseJsonResponse } from './ai-compatibility.js';
 
 // Only create proxy agent if PROXY_URI is available
-const proxyAgent = PROXY_URI ? new undici.ProxyAgent(PROXY_URI) : null;
+const proxyAgent = env.PROXY_URI ? new undici.ProxyAgent(env.PROXY_URI) : null;
 
 const openai = new OpenAI({
-	baseURL: OPENROUTER_BASE_URL,
-	apiKey: OPENROUTER_API_KEY,
+	baseURL: env.OPENROUTER_BASE_URL,
+	apiKey: env.OPENROUTER_API_KEY,
 	defaultHeaders: {
 		'HTTP-Referer': 'https://gisttube.com',
 		'X-Title': 'gisttube',

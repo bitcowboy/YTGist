@@ -3,7 +3,7 @@
  * Handles differences between various AI providers and their JSON schema support
  */
 
-import { OPENROUTER_MODEL, USE_JSON_SCHEMA } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 
 /** Xiaomi Mimo v2.5 (OpenRouter): disable thinking mode per provider request body. */
 export const OPENROUTER_NO_REASONING = { thinking: { type: 'disabled' as const } };
@@ -41,7 +41,7 @@ const SCHEMA_UNSUPPORTED_MODELS = [
  */
 export function supportsJsonSchema(): boolean {
 	// Check environment variable first (default to true if not set)
-	const useJsonSchema = USE_JSON_SCHEMA?.toLowerCase();
+	const useJsonSchema = env.USE_JSON_SCHEMA?.toLowerCase();
 	return useJsonSchema === 'true' || useJsonSchema === '1' || useJsonSchema === 'yes';
 }
 
@@ -176,7 +176,7 @@ export function createApiRequestOptions(
 	fallbackData?: any
 ): any {
 	const baseOptions = {
-		model: OPENROUTER_MODEL,
+		model: env.OPENROUTER_MODEL,
 		messages: [...messages],
 		...OPENROUTER_NO_REASONING,
 	};
@@ -225,7 +225,7 @@ export function testJsonSchemaConfig(): {
 	supportsSchema: boolean;
 	reason: string;
 } {
-	const model = OPENROUTER_MODEL;
+	const model = env.OPENROUTER_MODEL;
 	const useJsonSchemaEnv = process.env.USE_JSON_SCHEMA;
 	const supportsSchema = supportsJsonSchema();
 	

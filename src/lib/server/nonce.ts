@@ -1,4 +1,4 @@
-import { NONCE_SECRET } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import { randomBytes, createHash, timingSafeEqual } from 'crypto';
 
 const NONCE_LENGTH = 32; // 256 bits
@@ -105,7 +105,7 @@ const cleanupExpiredNonces = (): void => {
 
 const createSignature = (payload: string): string => {
     return createHash('sha256')
-        .update(payload + NONCE_SECRET)
+        .update(payload + env.NONCE_SECRET)
         .digest('hex');
 }
 
