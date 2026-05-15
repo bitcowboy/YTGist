@@ -14,7 +14,7 @@ import type { SummaryData, FullSummaryData, VideoPlatform, VideoSummaryContent, 
 import OpenAI from 'openai';
 import { env } from '$env/dynamic/private';
 import prompt from '$lib/server/prompt.md?raw';
-import { createApiRequestOptions, parseJsonResponse, OPENROUTER_NO_REASONING } from './ai-compatibility.js';
+import { createApiRequestOptions, parseJsonResponse, OPENROUTER_NO_REASONING, summaryReasoningOptions } from './ai-compatibility.js';
 import StreamJson from 'stream-json';
 
 async function printDatabaseStructure(_collectionName: string = 'summaries') {
@@ -282,6 +282,7 @@ export type StreamEmitters = {
     onDelta?: (delta: string) => void;
     onComplete?: (fullSummary: string) => void;
     onPartial?: (partial: Partial<FullSummaryData>) => void;
+    onReasoningDelta?: (delta: string) => void;
 };
 
 /**
@@ -382,7 +383,7 @@ export const generateVideoSummaryStream = async (
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                ...OPENROUTER_NO_REASONING,
+                ...summaryReasoningOptions(),
             } as any);
 
             let buffer = '';
@@ -646,7 +647,17 @@ export const generateVideoSummaryStream = async (
                     console.log(`📊 Video ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
                 }
                 
-                const raw = chunk?.choices?.[0]?.delta?.content ?? '';
+                // Reasoning tokens are display-only: never accumulated or persisted.
+                const delta = chunk?.choices?.[0]?.delta ?? {};
+                const reasoningChunk: string =
+                    (typeof delta.reasoning === 'string' && delta.reasoning) ||
+                    (typeof delta.reasoning_content === 'string' && delta.reasoning_content) ||
+                    '';
+                if (reasoningChunk) {
+                    emitters.onReasoningDelta?.(reasoningChunk);
+                }
+
+                const raw = delta.content ?? '';
                 const part = raw.replace(/```(?:json)?\s*|```/gi, '').replace(/^\uFEFF/, '');
                 if (!part) continue;
                 buffer += part;
