@@ -55,9 +55,9 @@
 		"@sveltejs/adapter-node": "^5.5.4",
 		"https-proxy-agent": "^7.0.6",
 		"marked": "^16.4.2",
-		"node-appwrite": "^17.2.0",
 		"nprogress": "^0.2.0",
 		"openai": "^5.23.2",
+		"pocketbase": "^0.26.9",
 		"rss-parser": "^3.13.0",
 		"stream-json": "^1.9.1",
 		"undici": "^7.24.5"

@@ -1,23 +1,19 @@
-import { databases } from '$lib/server/appwrite.js';
+import { pb, ensureAdminAuth } from '$lib/server/pocketbase.js';
+import { COLLECTIONS } from '$lib/server/database.js';
 import type { SummaryData } from '$lib/types.js';
 import { error } from '@sveltejs/kit';
-import { Query } from 'node-appwrite';
 import type { PageServerLoad } from './$types.js';
 
 export const load: PageServerLoad = async () => {
     try {
-        const summaries = await databases.listDocuments<SummaryData>(
-            'main',
-            'summaries',
-            [
-                Query.orderDesc('$createdAt'),
-                Query.limit(50),
-                Query.select(['$id', 'title', 'videoId', '$createdAt', 'hits'])
-            ]
-        );
+        await ensureAdminAuth();
+        const page = await pb.collection(COLLECTIONS.SUMMARIES).getList<SummaryData>(1, 50, {
+            sort: '-created',
+            fields: 'id,title,videoId,created,hits'
+        });
 
         return {
-            summaries: summaries.documents
+            summaries: page.items
         };
     } catch (e) {
         console.error('Failed to fetch recent summaries:', e);

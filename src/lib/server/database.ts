@@ -1,14 +1,12 @@
-import { databases } from './appwrite.js';
-import { ID, Query } from 'node-appwrite';
-import type { 
-    SummaryData, 
-    VideoSummaryContent, 
-    VideoKeyInsights, 
-    VideoCommentsAnalysis, 
+import { pb, ensureAdminAuth, escapeFilterValue } from './pocketbase.js';
+import type {
+    SummaryData,
+    VideoSummaryContent,
+    VideoKeyInsights,
+    VideoCommentsAnalysis,
     FullSummaryData,
-    BlockedChannel, 
-    AppwriteDocument, 
-    VideoPlatform 
+    BlockedChannel,
+    VideoPlatform
 } from '$lib/types.js';
 
 // 数据库表名常量
@@ -23,20 +21,26 @@ export const COLLECTIONS = {
     BLOCKED_CHANNELS: 'blocked_channels'
 } as const;
 
+const buildVideoFilter = (videoId: string, platform: VideoPlatform) =>
+    `videoId = "${escapeFilterValue(videoId)}" && platform = "${escapeFilterValue(platform)}"`;
+
+const findFirst = async <T>(collection: string, filter: string): Promise<T | null> => {
+    await ensureAdminAuth();
+    try {
+        const record = await pb.collection(collection).getFirstListItem<T>(filter);
+        return record;
+    } catch (err: any) {
+        if (err?.status === 404) return null;
+        throw err;
+    }
+};
+
 // ============ 分表操作 ============
 
 // 获取主表数据（仅基础信息和元数据）
 export const getSummary = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<SummaryData | null> => {
     try {
-        const { documents } = await databases.listDocuments<SummaryData>(
-            'main',
-            COLLECTIONS.SUMMARIES,
-            [
-                Query.equal('videoId', videoId),
-                Query.equal('platform', platform)
-            ]
-        );
-        return documents.length > 0 ? documents[0] : null;
+        return await findFirst<SummaryData>(COLLECTIONS.SUMMARIES, buildVideoFilter(videoId, platform));
     } catch (error) {
         console.error('Failed to get summary:', error);
         return null;
@@ -46,15 +50,7 @@ export const getSummary = async (videoId: string, platform: VideoPlatform = 'you
 // 获取视频摘要内容
 export const getVideoSummaryContent = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoSummaryContent | null> => {
     try {
-        const { documents } = await databases.listDocuments<VideoSummaryContent>(
-            'main',
-            COLLECTIONS.VIDEO_SUMMARIES,
-            [
-                Query.equal('videoId', videoId),
-                Query.equal('platform', platform)
-            ]
-        );
-        return documents.length > 0 ? documents[0] : null;
+        return await findFirst<VideoSummaryContent>(COLLECTIONS.VIDEO_SUMMARIES, buildVideoFilter(videoId, platform));
     } catch (error) {
         console.error('Failed to get video summary content:', error);
         return null;
@@ -64,15 +60,7 @@ export const getVideoSummaryContent = async (videoId: string, platform: VideoPla
 // 获取关键要点
 export const getVideoKeyInsights = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoKeyInsights | null> => {
     try {
-        const { documents } = await databases.listDocuments<VideoKeyInsights>(
-            'main',
-            COLLECTIONS.VIDEO_KEY_INSIGHTS,
-            [
-                Query.equal('videoId', videoId),
-                Query.equal('platform', platform)
-            ]
-        );
-        return documents.length > 0 ? documents[0] : null;
+        return await findFirst<VideoKeyInsights>(COLLECTIONS.VIDEO_KEY_INSIGHTS, buildVideoFilter(videoId, platform));
     } catch (error) {
         console.error('Failed to get video key insights:', error);
         return null;
@@ -82,15 +70,7 @@ export const getVideoKeyInsights = async (videoId: string, platform: VideoPlatfo
 // 获取评论分析
 export const getVideoCommentsAnalysis = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<VideoCommentsAnalysis | null> => {
     try {
-        const { documents } = await databases.listDocuments<VideoCommentsAnalysis>(
-            'main',
-            COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
-            [
-                Query.equal('videoId', videoId),
-                Query.equal('platform', platform)
-            ]
-        );
-        return documents.length > 0 ? documents[0] : null;
+        return await findFirst<VideoCommentsAnalysis>(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, buildVideoFilter(videoId, platform));
     } catch (error) {
         console.error('Failed to get video comments analysis:', error);
         return null;
@@ -168,10 +148,11 @@ export const createSummary = async (summaryData: {
     commentsKeyPoints?: string[];
     commentsCount?: number;
 }): Promise<FullSummaryData> => {
-    // Clamp fields to Appwrite attribute limits to avoid document_invalid_structure
-    // 字段大小限制与 init-database 中的定义保持一致
+    await ensureAdminAuth();
+
+    // Clamp fields to attribute limits to avoid invalid_structure errors
     const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
-    
+
     // keyPoints: 数据库限制 4000，每项最多 200 字符，最多 15 项，存储为 JSON 字符串
     const safeKeyPoints = JSON.stringify((summaryData.keyPoints || []).map((kp) => clamp(kp, 200)).slice(0, 15));
     // coreTerms: 数据库限制 2000，每项最多 100 字符，最多 15 项，存储为 JSON 字符串
@@ -195,12 +176,7 @@ export const createSummary = async (summaryData: {
         hits: 0
     };
 
-    const mainDoc = await databases.createDocument<SummaryData>(
-        'main',
-        COLLECTIONS.SUMMARIES,
-        ID.unique(),
-        mainPayload
-    );
+    const mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainPayload);
 
     // 2. 创建摘要内容子表数据
     const summaryContentPayload = {
@@ -209,12 +185,7 @@ export const createSummary = async (summaryData: {
         summary: clamp(summaryData.summary, 5000)
     };
 
-    await databases.createDocument<VideoSummaryContent>(
-        'main',
-        COLLECTIONS.VIDEO_SUMMARIES,
-        ID.unique(),
-        summaryContentPayload
-    );
+    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentPayload);
 
     // 3. 创建关键要点子表数据
     const keyInsightsPayload = {
@@ -225,12 +196,7 @@ export const createSummary = async (summaryData: {
         coreTerms: safeCoreTerms
     };
 
-    await databases.createDocument<VideoKeyInsights>(
-        'main',
-        COLLECTIONS.VIDEO_KEY_INSIGHTS,
-        ID.unique(),
-        keyInsightsPayload as any  // 使用类型断言，因为数据库存储为 JSON 字符串
-    );
+    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsPayload as any);
 
     // 4. 创建评论分析子表数据
     const commentsPayload = {
@@ -241,12 +207,7 @@ export const createSummary = async (summaryData: {
         commentsCount: summaryData.commentsCount || 0
     };
 
-    await databases.createDocument<VideoCommentsAnalysis>(
-        'main',
-        COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
-        ID.unique(),
-        commentsPayload as any  // 使用类型断言，因为数据库存储为 JSON 字符串
-    );
+    await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsPayload as any);
 
     // 解析 JSON 字符串回数组的辅助函数
     const parseJsonArray = (jsonStr: string): string[] => {
@@ -258,7 +219,7 @@ export const createSummary = async (summaryData: {
         }
     };
 
-    // 返回组合后的完整数据（需要将 JSON 字符串解析回数组）
+    // 返回组合后的完整数据
     return {
         ...mainDoc,
         summary: summaryContentPayload.summary,
@@ -285,32 +246,21 @@ export const updateSummary = async (videoId: string, platform: VideoPlatform = '
     if (!existing) {
         throw new Error('Summary not found');
     }
-    
-    return await databases.updateDocument<SummaryData>(
-        'main',
-        COLLECTIONS.SUMMARIES,
-        existing.$id,
-        updateData
-    );
+    await ensureAdminAuth();
+    return await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existing.id, updateData);
 };
 
 // 更新视频摘要内容
 export const updateVideoSummaryContent = async (videoId: string, platform: VideoPlatform = 'youtube', summary: string): Promise<VideoSummaryContent> => {
     const existing = await getVideoSummaryContent(videoId, platform);
+    await ensureAdminAuth();
     if (!existing) {
-        // 如果不存在则创建
-        return await databases.createDocument<VideoSummaryContent>(
-            'main',
-            COLLECTIONS.VIDEO_SUMMARIES,
-            ID.unique(),
+        return await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(
             { videoId, platform, summary: summary.slice(0, 5000) }
         );
     }
-    
-    return await databases.updateDocument<VideoSummaryContent>(
-        'main',
-        COLLECTIONS.VIDEO_SUMMARIES,
-        existing.$id,
+    return await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(
+        existing.id,
         { summary: summary.slice(0, 5000) }
     );
 };
@@ -322,30 +272,20 @@ export const updateVideoKeyInsights = async (videoId: string, platform: VideoPla
     coreTerms: string[];
 }>): Promise<VideoKeyInsights> => {
     const existing = await getVideoKeyInsights(videoId, platform);
-    
+    await ensureAdminAuth();
+
     const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
     const payload: any = {};
     if (updateData.keyTakeaway !== undefined) payload.keyTakeaway = clamp(updateData.keyTakeaway, 600);
-    // keyPoints 和 coreTerms 需要存储为 JSON 字符串
     if (updateData.keyPoints !== undefined) payload.keyPoints = JSON.stringify(updateData.keyPoints.map(kp => clamp(kp, 200)).slice(0, 15));
     if (updateData.coreTerms !== undefined) payload.coreTerms = JSON.stringify(updateData.coreTerms.map(ct => clamp(ct, 100)).slice(0, 15));
-    
+
     if (!existing) {
-        // 如果不存在则创建
-        return await databases.createDocument<VideoKeyInsights>(
-            'main',
-            COLLECTIONS.VIDEO_KEY_INSIGHTS,
-            ID.unique(),
+        return await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(
             { videoId, platform, ...payload }
         );
     }
-    
-    return await databases.updateDocument<VideoKeyInsights>(
-        'main',
-        COLLECTIONS.VIDEO_KEY_INSIGHTS,
-        existing.$id,
-        payload
-    );
+    return await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existing.id, payload);
 };
 
 // 更新评论分析
@@ -355,29 +295,20 @@ export const updateVideoCommentsAnalysis = async (videoId: string, platform: Vid
     commentsCount: number;
 }>): Promise<VideoCommentsAnalysis> => {
     const existing = await getVideoCommentsAnalysis(videoId, platform);
-    
+    await ensureAdminAuth();
+
     const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
     const payload: any = {};
     if (updateData.commentsSummary !== undefined) payload.commentsSummary = clamp(updateData.commentsSummary, 1000);
-    if (updateData.commentsKeyPoints !== undefined) payload.commentsKeyPoints = updateData.commentsKeyPoints.map(ckp => clamp(ckp, 150)).slice(0, 10);
+    if (updateData.commentsKeyPoints !== undefined) payload.commentsKeyPoints = JSON.stringify(updateData.commentsKeyPoints.map(ckp => clamp(ckp, 150)).slice(0, 10));
     if (updateData.commentsCount !== undefined) payload.commentsCount = updateData.commentsCount;
-    
+
     if (!existing) {
-        // 如果不存在则创建
-        return await databases.createDocument<VideoCommentsAnalysis>(
-            'main',
-            COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
-            ID.unique(),
+        return await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(
             { videoId, platform, ...payload }
         );
     }
-    
-    return await databases.updateDocument<VideoCommentsAnalysis>(
-        'main',
-        COLLECTIONS.VIDEO_COMMENTS_ANALYSIS,
-        existing.$id,
-        payload
-    );
+    return await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existing.id, payload);
 };
 
 export const incrementSummaryHits = async (videoId: string, platform: VideoPlatform = 'youtube'): Promise<SummaryData> => {
@@ -385,44 +316,28 @@ export const incrementSummaryHits = async (videoId: string, platform: VideoPlatf
     if (!existing) {
         throw new Error('Summary not found');
     }
-    
-    return await databases.updateDocument<SummaryData>(
-        'main',
-        COLLECTIONS.SUMMARIES,
-        existing.$id,
+    await ensureAdminAuth();
+    return await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(
+        existing.id,
         { hits: (existing.hits || 0) + 1 }
     );
 };
-
-// 组合操作 - 获取完整的视频数据
-// 单表模式不再提供组合查询与跨表检查
 
 // Transcript 相关操作
 export const upsertTranscript = async (
     videoId: string,
     transcript: string
 ) => {
+    await ensureAdminAuth();
     try {
-        const { documents, total } = await databases.listDocuments(
-            'main',
+        const existing = await findFirst<{ id: string }>(
             COLLECTIONS.TRANSCRIPTS,
-            [Query.equal('videoId', videoId), Query.limit(1)]
+            `videoId = "${escapeFilterValue(videoId)}"`
         );
-        if (total > 0) {
-            const doc = documents[0];
-            return await databases.updateDocument(
-                'main',
-                COLLECTIONS.TRANSCRIPTS,
-                doc.$id,
-                { transcript }
-            );
+        if (existing) {
+            return await pb.collection(COLLECTIONS.TRANSCRIPTS).update(existing.id, { transcript });
         }
-        return await databases.createDocument(
-            'main',
-            COLLECTIONS.TRANSCRIPTS,
-            ID.unique(),
-            { videoId, transcript }
-        );
+        return await pb.collection(COLLECTIONS.TRANSCRIPTS).create({ videoId, transcript });
     } catch (error) {
         console.error('Failed to upsert transcript:', error);
         throw error;
@@ -433,23 +348,21 @@ export const getTranscriptByVideoId = async (
     videoId: string
 ): Promise<string | null> => {
     try {
-        const { documents, total } = await databases.listDocuments(
-            'main',
+        const record = await findFirst<{ transcript?: string }>(
             COLLECTIONS.TRANSCRIPTS,
-            [Query.equal('videoId', videoId), Query.limit(1)]
+            `videoId = "${escapeFilterValue(videoId)}"`
         );
-        if (total > 0) {
-            const doc = documents[0] as { transcript?: string };
-            const value = (doc.transcript ?? '') || null;
-            if (value) {
-                console.log('[db] transcript hit for', videoId, `(length=${value.length})`);
-            } else {
-                console.log('[db] transcript empty for', videoId);
-            }
-            return value;
+        if (!record) {
+            console.log('[db] transcript miss for', videoId);
+            return null;
         }
-        console.log('[db] transcript miss for', videoId);
-        return null;
+        const value = (record.transcript ?? '') || null;
+        if (value) {
+            console.log('[db] transcript hit for', videoId, `(length=${value.length})`);
+        } else {
+            console.log('[db] transcript empty for', videoId);
+        }
+        return value;
     } catch (error) {
         console.error('Failed to get transcript by videoId:', error);
         return null;
@@ -459,12 +372,10 @@ export const getTranscriptByVideoId = async (
 // Blocked Channel 相关操作
 export const getBlockedChannels = async (): Promise<BlockedChannel[]> => {
     try {
-        const { documents } = await databases.listDocuments<BlockedChannel>(
-            'main',
-            COLLECTIONS.BLOCKED_CHANNELS,
-            [Query.orderDesc('$createdAt')]
-        );
-        return documents;
+        await ensureAdminAuth();
+        return await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).getFullList<BlockedChannel>({
+            sort: '-created'
+        });
     } catch (error) {
         console.error('Failed to get blocked channels:', error);
         return [];
@@ -473,12 +384,11 @@ export const getBlockedChannels = async (): Promise<BlockedChannel[]> => {
 
 export const isChannelBlocked = async (channelId: string): Promise<boolean> => {
     try {
-        const { documents } = await databases.listDocuments<BlockedChannel>(
-            'main',
+        const record = await findFirst<BlockedChannel>(
             COLLECTIONS.BLOCKED_CHANNELS,
-            [Query.equal('channelId', channelId), Query.limit(1)]
+            `channelId = "${escapeFilterValue(channelId)}"`
         );
-        return documents.length > 0;
+        return record !== null;
     } catch (error) {
         console.error('Failed to check if channel is blocked:', error);
         return false;
@@ -487,32 +397,26 @@ export const isChannelBlocked = async (channelId: string): Promise<boolean> => {
 
 export const addBlockedChannel = async (channelId: string, channelName: string): Promise<BlockedChannel> => {
     try {
-        // 检查是否已经存在
-        const existing = await databases.listDocuments<BlockedChannel>(
-            'main',
+        await ensureAdminAuth();
+        const existing = await findFirst<BlockedChannel>(
             COLLECTIONS.BLOCKED_CHANNELS,
-            [Query.equal('channelId', channelId), Query.limit(1)]
+            `channelId = "${escapeFilterValue(channelId)}"`
         );
-        
-        if (existing.documents.length > 0) {
+
+        if (existing) {
             // 如果频道已经被阻止，仍然清除数据（以防有新的数据）
             await clearChannelData(channelId);
-            return existing.documents[0];
+            return existing;
         }
-        
+
         // 在添加到block list之前，先清除该频道的所有数据
         await clearChannelData(channelId);
-        
-        return await databases.createDocument<BlockedChannel>(
-            'main',
-            COLLECTIONS.BLOCKED_CHANNELS,
-            ID.unique(),
-            {
-                channelId,
-                channelName,
-                blockedAt: new Date().toISOString()
-            }
-        );
+
+        return await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).create<BlockedChannel>({
+            channelId,
+            channelName,
+            blockedAt: new Date().toISOString()
+        });
     } catch (error) {
         console.error('Failed to add blocked channel:', error);
         throw error;
@@ -521,18 +425,13 @@ export const addBlockedChannel = async (channelId: string, channelName: string):
 
 export const removeBlockedChannel = async (channelId: string): Promise<void> => {
     try {
-        const { documents } = await databases.listDocuments<BlockedChannel>(
-            'main',
+        await ensureAdminAuth();
+        const existing = await findFirst<BlockedChannel>(
             COLLECTIONS.BLOCKED_CHANNELS,
-            [Query.equal('channelId', channelId), Query.limit(1)]
+            `channelId = "${escapeFilterValue(channelId)}"`
         );
-        
-        if (documents.length > 0) {
-            await databases.deleteDocument(
-                'main',
-                COLLECTIONS.BLOCKED_CHANNELS,
-                documents[0].$id
-            );
+        if (existing) {
+            await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).delete(existing.id);
         }
     } catch (error) {
         console.error('Failed to remove blocked channel:', error);
@@ -542,18 +441,10 @@ export const removeBlockedChannel = async (channelId: string): Promise<void> => 
 
 export const clearBlockedChannels = async (): Promise<void> => {
     try {
-        const { documents } = await databases.listDocuments<BlockedChannel>(
-            'main',
-            COLLECTIONS.BLOCKED_CHANNELS
-        );
-        
-        // 批量删除所有被阻止的频道
-        for (const doc of documents) {
-            await databases.deleteDocument(
-                'main',
-                COLLECTIONS.BLOCKED_CHANNELS,
-                doc.$id
-            );
+        await ensureAdminAuth();
+        const records = await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).getFullList<BlockedChannel>();
+        for (const record of records) {
+            await pb.collection(COLLECTIONS.BLOCKED_CHANNELS).delete(record.id);
         }
     } catch (error) {
         console.error('Failed to clear blocked channels:', error);
@@ -564,48 +455,57 @@ export const clearBlockedChannels = async (): Promise<void> => {
 // 清除指定频道的所有数据
 export const clearChannelData = async (channelId: string): Promise<void> => {
     try {
+        await ensureAdminAuth();
         console.log(`Clearing all data for channel: ${channelId}`);
-        
+
         // 1. 从summaries表中获取该频道的所有videoId
-        const { documents: summaries } = await databases.listDocuments<SummaryData>(
-            'main',
-            COLLECTIONS.SUMMARIES,
-            [Query.equal('channelId', channelId)]
-        );
-        
-        const videoIds = summaries.map(summary => summary.videoId);
+        const summaries = await pb.collection(COLLECTIONS.SUMMARIES).getFullList<SummaryData>({
+            filter: `channelId = "${escapeFilterValue(channelId)}"`
+        });
+
+        const videoIds = summaries.map((s) => s.videoId);
         console.log(`Found ${videoIds.length} videos for channel ${channelId}:`, videoIds);
-        
-        // 2. 删除summaries表中的记录
+
+        // 2. 删除主表 + 三个子表的记录
         for (const summary of summaries) {
             try {
-                await databases.deleteDocument('main', COLLECTIONS.SUMMARIES, summary.$id);
+                await pb.collection(COLLECTIONS.SUMMARIES).delete(summary.id);
                 console.log(`Deleted summary for video: ${summary.videoId}`);
             } catch (error) {
                 console.error(`Failed to delete summary for video ${summary.videoId}:`, error);
             }
+
+            for (const childCollection of [COLLECTIONS.VIDEO_SUMMARIES, COLLECTIONS.VIDEO_KEY_INSIGHTS, COLLECTIONS.VIDEO_COMMENTS_ANALYSIS]) {
+                try {
+                    const children = await pb.collection(childCollection).getFullList<{ id: string }>({
+                        filter: `videoId = "${escapeFilterValue(summary.videoId)}"`
+                    });
+                    for (const child of children) {
+                        await pb.collection(childCollection).delete(child.id);
+                    }
+                } catch (error) {
+                    console.error(`Failed to delete ${childCollection} for video ${summary.videoId}:`, error);
+                }
+            }
         }
-        
+
         // 3. 删除transcripts表中的记录
         for (const videoId of videoIds) {
             try {
-                const { documents: transcripts } = await databases.listDocuments(
-                    'main',
-                    COLLECTIONS.TRANSCRIPTS,
-                    [Query.equal('videoId', videoId)]
-                );
-                
+                const transcripts = await pb.collection(COLLECTIONS.TRANSCRIPTS).getFullList<{ id: string }>({
+                    filter: `videoId = "${escapeFilterValue(videoId)}"`
+                });
                 for (const transcript of transcripts) {
-                    await databases.deleteDocument('main', COLLECTIONS.TRANSCRIPTS, transcript.$id);
+                    await pb.collection(COLLECTIONS.TRANSCRIPTS).delete(transcript.id);
                     console.log(`Deleted transcript for video: ${videoId}`);
                 }
             } catch (error) {
                 console.error(`Failed to delete transcript for video ${videoId}:`, error);
             }
         }
-        
+
         console.log(`Channel data cleared successfully for channel: ${channelId}`);
-        
+
     } catch (error) {
         console.error('Failed to clear channel data:', error);
         throw error;

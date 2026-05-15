@@ -1,11 +1,9 @@
-export interface AppwriteDocument {
-    $id: string;
-    $collectionId: string;
-    $databaseId: string;
-    $createdAt: string;
-    $updatedAt: string;
-    $permissions: string[];
-    $sequence: number;
+export interface PocketBaseRecord {
+    id: string;
+    collectionId: string;
+    collectionName: string;
+    created: string;
+    updated: string;
 }
 
 // 视频平台类型
@@ -34,7 +32,7 @@ export interface Comment {
 }
 
 // 字幕（数据库：transcripts）
-export interface Transcript extends AppwriteDocument {
+export interface Transcript extends PocketBaseRecord {
     videoId: string;
     transcript: string;
 }
@@ -46,6 +44,8 @@ export interface VideoMeta {
     author: string;
     hasSubtitles: boolean;
     transcript: string;
+    platform: VideoPlatform;
+    thumbnailUrl?: string;
     publishedAt?: string; // ISO 8601 date string
     comments?: Comment[]; // 新增：原始评论数据
     commentsCount?: number;
@@ -58,7 +58,7 @@ export interface VideoMeta {
 // 子表：video_comments_analysis - 存储评论分析
 
 // 主表 - 视频基础信息和元数据
-export interface SummaryData extends AppwriteDocument {
+export interface SummaryData extends PocketBaseRecord {
     // 标识字段
     videoId: string;
     platform: VideoPlatform; // 平台标识（必需字段）
@@ -78,7 +78,7 @@ export interface SummaryData extends AppwriteDocument {
 }
 
 // 视频摘要表 - 存储AI生成的摘要内容
-export interface VideoSummaryContent extends AppwriteDocument {
+export interface VideoSummaryContent extends PocketBaseRecord {
     videoId: string;
     platform: VideoPlatform;
     summary: string; // 主摘要内容，最大5000字符
@@ -86,7 +86,7 @@ export interface VideoSummaryContent extends AppwriteDocument {
 
 // 关键要点表 - 存储keyTakeaway/keyPoints/coreTerms
 // 注意：keyPoints 和 coreTerms 在数据库中存储为 JSON 字符串，但在应用层使用数组
-export interface VideoKeyInsights extends AppwriteDocument {
+export interface VideoKeyInsights extends PocketBaseRecord {
     videoId: string;
     platform: VideoPlatform;
     keyTakeaway: string;   // 核心要点，最大600字符
@@ -96,7 +96,7 @@ export interface VideoKeyInsights extends AppwriteDocument {
 
 // 评论分析表 - 存储评论相关的AI分析结果
 // 注意：commentsKeyPoints 在数据库中存储为 JSON 字符串，但在应用层使用数组
-export interface VideoCommentsAnalysis extends AppwriteDocument {
+export interface VideoCommentsAnalysis extends PocketBaseRecord {
     videoId: string;
     platform: VideoPlatform;
     commentsSummary: string;      // 评论总结，最大1000字符
@@ -153,7 +153,7 @@ export interface ChatResponse {
 }
 
 // 被阻止的频道类型
-export interface BlockedChannel extends AppwriteDocument {
+export interface BlockedChannel extends PocketBaseRecord {
     channelId: string;
     channelName: string;
     blockedAt: string;

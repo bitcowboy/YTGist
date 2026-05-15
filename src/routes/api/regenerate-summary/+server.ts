@@ -1,9 +1,9 @@
-import { databases } from '$lib/server/appwrite.js';
+import { pb, ensureAdminAuth, escapeFilterValue } from '$lib/server/pocketbase.js';
+import { COLLECTIONS } from '$lib/server/database.js';
 import { validateNonce } from '$lib/server/nonce.js';
 import { PlatformFactory } from '$lib/server/platforms/platform-factory';
 import type { VideoPlatform } from '$lib/types';
 import { error, json } from '@sveltejs/kit';
-import { Query } from 'node-appwrite';
 
 export const GET = async ({ url }) => {
     const videoId = url.searchParams.get('v');
@@ -38,15 +38,13 @@ export const GET = async ({ url }) => {
     }
 
     try {
-        // Delete existing summaries for this videoId and platform
-        const { documents } = await databases.listDocuments('main', 'summaries', [
-            Query.equal('videoId', videoId),
-            Query.equal('platform', platform)
-        ]);
+        await ensureAdminAuth();
+        const filter = `videoId = "${escapeFilterValue(videoId)}" && platform = "${escapeFilterValue(platform)}"`;
+        const docs = await pb.collection(COLLECTIONS.SUMMARIES).getFullList<{ id: string }>({ filter });
 
         let deleted = 0;
-        for (const doc of documents) {
-            await databases.deleteDocument('main', 'summaries', doc.$id);
+        for (const doc of docs) {
+            await pb.collection(COLLECTIONS.SUMMARIES).delete(doc.id);
             deleted += 1;
         }
 

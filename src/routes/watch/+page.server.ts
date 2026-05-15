@@ -1,9 +1,7 @@
-import { databases } from '$lib/server/appwrite.js';
-import { getFullSummary, COLLECTIONS } from '$lib/server/database.js';
-import type { FullSummaryData, VideoPlatform } from '$lib/types.js';
+import { getFullSummary, incrementSummaryHits } from '$lib/server/database.js';
+import type { VideoPlatform } from '$lib/types.js';
 import { PlatformFactory } from '$lib/server/platforms/platform-factory';
 import { error } from '@sveltejs/kit';
-import { Query } from 'node-appwrite';
 
 export const load = async ({ url }) => {
 	const videoId = url.searchParams.get('v');
@@ -37,8 +35,10 @@ export const load = async ({ url }) => {
 		const summaryData = await getFullSummary(videoId, platform);
 
 		if (summaryData) {
-			// 更新访问次数
-			const updateHits = databases.incrementDocumentAttribute('main', COLLECTIONS.SUMMARIES, summaryData.$id, 'hits', 1);
+			// 更新访问次数（不等待，避免阻塞页面渲染）
+			const updateHits = incrementSummaryHits(videoId, platform).catch((e) => {
+				console.warn('Failed to increment hits:', e);
+			});
 
 			return { summaryData, updateHits, platform };
 		}

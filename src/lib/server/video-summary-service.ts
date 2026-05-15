@@ -1,7 +1,7 @@
-import { databases } from '$lib/server/appwrite.js';
-import { 
-    upsertTranscript, 
-    isChannelBlocked, 
+import { pb, ensureAdminAuth, escapeFilterValue } from '$lib/server/pocketbase.js';
+import {
+    upsertTranscript,
+    isChannelBlocked,
     COLLECTIONS,
     getSummary as getMainSummary,
     getVideoSummaryContent,
@@ -11,60 +11,17 @@ import {
 import { getSummary } from '$lib/server/summary.js';
 import { getVideoData } from '$lib/server/videoData.js';
 import type { SummaryData, FullSummaryData, VideoPlatform, VideoSummaryContent, VideoKeyInsights, VideoCommentsAnalysis } from '$lib/types.js';
-import { ID, Query } from 'node-appwrite';
 import OpenAI from 'openai';
 import { OPENROUTER_BASE_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL } from '$env/static/private';
 import prompt from '$lib/server/prompt.md?raw';
 import { createApiRequestOptions, parseJsonResponse, OPENROUTER_NO_REASONING } from './ai-compatibility.js';
 import StreamJson from 'stream-json';
 
-/**
- * 打印数据库集合的实际结构
- */
-async function printDatabaseStructure(collectionName: string = 'summaries') {
-    try {
-        const collections = await databases.listCollections('main');
-        const collection = collections.collections.find(c => c.name === collectionName);
-        
-        if (!collection) {
-            console.log(`[DB Structure] Collection '${collectionName}' not found`);
-            return;
-        }
-        
-        const attributes = await databases.listAttributes('main', collection.$id);
-        
-        console.log(`\n📋 [DB Structure] Collection '${collectionName}' (ID: ${collection.$id})`);
-        console.log('='.repeat(80));
-        console.log('Attributes:');
-        
-        const attrList = attributes.attributes.map((attr: any) => {
-            const info: any = {
-                key: attr.key,
-                type: attr.type,
-                size: attr.size || attr.maxLength || 'N/A',
-                required: attr.required || false,
-                array: attr.array || false
-            };
-            return info;
-        });
-        
-        // 按字段名排序
-        attrList.sort((a: any, b: any) => a.key.localeCompare(b.key));
-        
-        attrList.forEach((attr: any) => {
-            const required = attr.required ? '✓' : '✗';
-            const array = attr.array ? '[array]' : '';
-            console.log(`  ${required} ${attr.key.padEnd(25)} | ${attr.type.padEnd(10)} | size: ${String(attr.size).padStart(6)} ${array}`);
-        });
-        
-        console.log('='.repeat(80));
-        console.log(`Total attributes: ${attrList.length}\n`);
-        
-        return attrList;
-    } catch (error) {
-        console.error(`[DB Structure] Failed to print structure:`, error);
-        return null;
-    }
+async function printDatabaseStructure(_collectionName: string = 'summaries') {
+    // Schema introspection was Appwrite-specific debugging output; PocketBase
+    // collection metadata is exposed via the admin API and not needed at
+    // runtime, so this is now a no-op kept for call-site compatibility.
+    return null;
 }
 
 export interface VideoSummaryResult {
@@ -208,76 +165,45 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
 
         // 6. 保存到数据库（分表upsert逻辑）
         const step5Start = Date.now();
-        await printDatabaseStructure('summaries');
+        await ensureAdminAuth();
+        const filter = `videoId = "${escapeFilterValue(safeVideoId)}" && platform = "${escapeFilterValue(platform)}"`;
 
         // 检查各表是否已存在数据
         const [existingMain, existingSummary, existingInsights, existingComments] = await Promise.all([
-            databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoSummaryContent>('main', COLLECTIONS.VIDEO_SUMMARIES, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoKeyInsights>('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoCommentsAnalysis>('main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ])
+            pb.collection(COLLECTIONS.SUMMARIES).getList<SummaryData>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_SUMMARIES).getList<VideoSummaryContent>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).getList<VideoKeyInsights>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).getList<VideoCommentsAnalysis>(1, 1, { filter })
         ]);
 
         let mainDoc: SummaryData;
 
         // 保存主表
-        if (existingMain.total > 0) {
-            mainDoc = await databases.updateDocument<SummaryData>(
-                'main', COLLECTIONS.SUMMARIES, existingMain.documents[0].$id, mainData
-            );
+        if (existingMain.totalItems > 0) {
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
         } else {
-            mainDoc = await databases.createDocument<SummaryData>(
-                'main', COLLECTIONS.SUMMARIES, ID.unique(), mainData
-            );
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
         }
 
         // 保存摘要内容子表
-        if (existingSummary.total > 0) {
-            await databases.updateDocument<VideoSummaryContent>(
-                'main', COLLECTIONS.VIDEO_SUMMARIES, existingSummary.documents[0].$id, summaryContentData
-            );
+        if (existingSummary.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, summaryContentData);
         } else {
-            await databases.createDocument<VideoSummaryContent>(
-                'main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), summaryContentData
-            );
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentData);
         }
 
         // 保存关键要点子表
-        if (existingInsights.total > 0) {
-            await databases.updateDocument<VideoKeyInsights>(
-                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, existingInsights.documents[0].$id, keyInsightsData as any
-            );
+        if (existingInsights.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, keyInsightsData as any);
         } else {
-            await databases.createDocument<VideoKeyInsights>(
-                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), keyInsightsData as any
-            );
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsData as any);
         }
 
         // 保存评论分析子表
-        if (existingComments.total > 0) {
-            await databases.updateDocument<VideoCommentsAnalysis>(
-                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, existingComments.documents[0].$id, commentsData as any
-            );
+        if (existingComments.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, commentsData as any);
         } else {
-            await databases.createDocument<VideoCommentsAnalysis>(
-                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, ID.unique(), commentsData as any
-            );
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsData as any);
         }
 
         // 组合完整数据（需要将 JSON 字符串解析回数组）
@@ -294,7 +220,7 @@ export const generateVideoSummary = async (videoId: string, platform: VideoPlatf
 
         const step5Time = Date.now() - step5Start;
         console.log(`📊 Video ${videoId} - Step 5 (Save to database - split tables): ${step5Time}ms`, {
-            operation: existingMain.total > 0 ? 'update' : 'create'
+            operation: existingMain.totalItems > 0 ? 'update' : 'create'
         });
 
         const totalTime = Date.now() - startTime;
@@ -937,76 +863,45 @@ export const generateVideoSummaryStream = async (
         };
 
         const step6DbStart = Date.now();
-        await printDatabaseStructure('summaries');
+        await ensureAdminAuth();
+        const filter = `videoId = "${escapeFilterValue(safeVideoId)}" && platform = "${escapeFilterValue(platform)}"`;
 
         // 检查各表是否已存在数据
         const [existingMain, existingSummary, existingInsights, existingComments] = await Promise.all([
-            databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoSummaryContent>('main', COLLECTIONS.VIDEO_SUMMARIES, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoKeyInsights>('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ]),
-            databases.listDocuments<VideoCommentsAnalysis>('main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, [
-                Query.equal('videoId', safeVideoId),
-                Query.equal('platform', platform),
-                Query.limit(1)
-            ])
+            pb.collection(COLLECTIONS.SUMMARIES).getList<SummaryData>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_SUMMARIES).getList<VideoSummaryContent>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).getList<VideoKeyInsights>(1, 1, { filter }),
+            pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).getList<VideoCommentsAnalysis>(1, 1, { filter })
         ]);
 
         let mainDoc: SummaryData;
 
         // 保存主表
-        if (existingMain.total > 0) {
-            mainDoc = await databases.updateDocument<SummaryData>(
-                'main', COLLECTIONS.SUMMARIES, existingMain.documents[0].$id, mainData
-            );
+        if (existingMain.totalItems > 0) {
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
         } else {
-            mainDoc = await databases.createDocument<SummaryData>(
-                'main', COLLECTIONS.SUMMARIES, ID.unique(), mainData
-            );
+            mainDoc = await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
         }
 
         // 保存摘要内容子表
-        if (existingSummary.total > 0) {
-            await databases.updateDocument<VideoSummaryContent>(
-                'main', COLLECTIONS.VIDEO_SUMMARIES, existingSummary.documents[0].$id, summaryContentData
-            );
+        if (existingSummary.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).update<VideoSummaryContent>(existingSummary.items[0].id, summaryContentData);
         } else {
-            await databases.createDocument<VideoSummaryContent>(
-                'main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), summaryContentData
-            );
+            await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create<VideoSummaryContent>(summaryContentData);
         }
 
         // 保存关键要点子表
-        if (existingInsights.total > 0) {
-            await databases.updateDocument<VideoKeyInsights>(
-                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, existingInsights.documents[0].$id, keyInsightsData as any
-            );
+        if (existingInsights.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).update<VideoKeyInsights>(existingInsights.items[0].id, keyInsightsData as any);
         } else {
-            await databases.createDocument<VideoKeyInsights>(
-                'main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), keyInsightsData as any
-            );
+            await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create<VideoKeyInsights>(keyInsightsData as any);
         }
 
         // 保存评论分析子表
-        if (existingComments.total > 0) {
-            await databases.updateDocument<VideoCommentsAnalysis>(
-                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, existingComments.documents[0].$id, commentsData as any
-            );
+        if (existingComments.totalItems > 0) {
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).update<VideoCommentsAnalysis>(existingComments.items[0].id, commentsData as any);
         } else {
-            await databases.createDocument<VideoCommentsAnalysis>(
-                'main', COLLECTIONS.VIDEO_COMMENTS_ANALYSIS, ID.unique(), commentsData as any
-            );
+            await pb.collection(COLLECTIONS.VIDEO_COMMENTS_ANALYSIS).create<VideoCommentsAnalysis>(commentsData as any);
         }
 
         // 组合完整数据（需要将 JSON 字符串解析回数组）
@@ -1025,7 +920,7 @@ export const generateVideoSummaryStream = async (
         const step6DbTime = Date.now() - step6DbStart;
         console.log(`📊 Video ${videoId} - Step 6 (Save to database - split tables): ${step6Time}ms`, {
             dbOperationTime: step6DbTime,
-            operation: existingMain.total > 0 ? 'update' : 'create'
+            operation: existingMain.totalItems > 0 ? 'update' : 'create'
         });
 
         const totalTime = Date.now() - startTime;

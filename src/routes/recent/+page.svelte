@@ -5,10 +5,10 @@
 	import type { PageData } from './$types.js';
 
 	interface RecentSummary {
-		$id: string;
+		id: string;
 		title: string;
 		videoId: string;
-		$createdAt: string;
+		created: string;
 		hits?: number;
 	}
 
@@ -32,7 +32,7 @@
 	</div>
 
 	<div class="space-y-6">
-		{#each summaries as summary (summary.$id)}
+		{#each summaries as summary (summary.id)}
 			<div
 				class="group rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-4 transition-all duration-200 hover:border-zinc-600/50 hover:bg-zinc-800/50"
 			>
@@ -60,7 +60,7 @@
 						<div class="flex flex-col text-sm text-zinc-500 sm:flex-row sm:items-center sm:gap-4">
 							<div class="flex items-center gap-1">
 								<ClockIcon class="h-4 w-4" />
-								<span>{timeAgo(summary.$createdAt)}</span>
+								<span>{timeAgo(summary.created)}</span>
 							</div>
 							<div class="flex items-center gap-1">
 								<EyeIcon class="h-4 w-4" />

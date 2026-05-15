@@ -4,8 +4,7 @@ import { generateVideoSummary, generateVideoSummaryStream } from '$lib/server/vi
 import { PlatformFactory } from '$lib/server/platforms/platform-factory';
 import type { VideoPlatform, SummaryData, FullSummaryData } from '$lib/types';
 import { error, json } from '@sveltejs/kit';
-import { ID, Query } from 'node-appwrite';
-import { databases } from '$lib/server/appwrite.js';
+import { pb, ensureAdminAuth, escapeFilterValue } from '$lib/server/pocketbase.js';
 import { getFullSummary, COLLECTIONS } from '$lib/server/database.js';
 
 export const GET = async ({ url }) => {
@@ -188,14 +187,10 @@ export const GET = async ({ url }) => {
                 
                 const clamp = (v: string | undefined | null, max: number) => (v ?? '').slice(0, max);
                 const safeVideoId = clamp(videoId, 50);
-                
-                // 检查主表是否存在
-                const existing = await databases.listDocuments<SummaryData>('main', COLLECTIONS.SUMMARIES, [
-                    Query.equal('videoId', safeVideoId),
-                    Query.equal('platform', platform),
-                    Query.limit(1)
-                ]);
-                
+
+                await ensureAdminAuth();
+                const filter = `videoId = "${escapeFilterValue(safeVideoId)}" && platform = "${escapeFilterValue(platform)}"`;
+
                 // 主表数据
                 const mainData = {
                     videoId: safeVideoId,
@@ -208,35 +203,28 @@ export const GET = async ({ url }) => {
                     description: clamp(basic.description, 2000),
                     hits: 0
                 };
-                
-                if (existing.total > 0) {
-                    await databases.updateDocument<SummaryData>('main', COLLECTIONS.SUMMARIES, existing.documents[0].$id, mainData);
+
+                const existingMain = await pb.collection(COLLECTIONS.SUMMARIES).getList<SummaryData>(1, 1, { filter });
+                if (existingMain.totalItems > 0) {
+                    await pb.collection(COLLECTIONS.SUMMARIES).update<SummaryData>(existingMain.items[0].id, mainData);
                 } else {
-                    await databases.createDocument<SummaryData>('main', COLLECTIONS.SUMMARIES, ID.unique(), mainData);
+                    await pb.collection(COLLECTIONS.SUMMARIES).create<SummaryData>(mainData);
                 }
-                
+
                 // 创建空的摘要内容子表
-                const existingSummary = await databases.listDocuments('main', COLLECTIONS.VIDEO_SUMMARIES, [
-                    Query.equal('videoId', safeVideoId),
-                    Query.equal('platform', platform),
-                    Query.limit(1)
-                ]);
-                if (existingSummary.total === 0) {
-                    await databases.createDocument('main', COLLECTIONS.VIDEO_SUMMARIES, ID.unique(), {
+                const existingSummary = await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).getList(1, 1, { filter });
+                if (existingSummary.totalItems === 0) {
+                    await pb.collection(COLLECTIONS.VIDEO_SUMMARIES).create({
                         videoId: safeVideoId,
                         platform: platform,
                         summary: ''
                     });
                 }
-                
+
                 // 创建空的关键要点子表
-                const existingInsights = await databases.listDocuments('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, [
-                    Query.equal('videoId', safeVideoId),
-                    Query.equal('platform', platform),
-                    Query.limit(1)
-                ]);
-                if (existingInsights.total === 0) {
-                    await databases.createDocument('main', COLLECTIONS.VIDEO_KEY_INSIGHTS, ID.unique(), {
+                const existingInsights = await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).getList(1, 1, { filter });
+                if (existingInsights.totalItems === 0) {
+                    await pb.collection(COLLECTIONS.VIDEO_KEY_INSIGHTS).create({
                         videoId: safeVideoId,
                         platform: platform,
                         keyTakeaway: '',
