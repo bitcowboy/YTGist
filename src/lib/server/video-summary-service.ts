@@ -376,7 +376,10 @@ export const generateVideoSummaryStream = async (
         try {
             llmRequestStart = Date.now();
             console.log(`📊 Video ${videoId} - LLM request initiated at ${llmRequestStart}`);
-            
+
+            const reasoningOpts = summaryReasoningOptions(thinking);
+            console.log(`[thinking-trace] v=${videoId} thinking=${thinking ?? '<undef>'} model=${env.OPENROUTER_MODEL} baseURL=${env.OPENROUTER_BASE_URL} opts=${JSON.stringify(reasoningOpts)}`);
+
             const stream = await openai.chat.completions.create({
                 model: env.OPENROUTER_MODEL,
                 stream: true,
@@ -384,7 +387,7 @@ export const generateVideoSummaryStream = async (
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                ...summaryReasoningOptions(thinking),
+                ...reasoningOpts,
             } as any);
 
             let buffer = '';
@@ -640,6 +643,8 @@ export const generateVideoSummaryStream = async (
                 console.log('[video-summary-stream] stream-json not available, fallback to best-effort parser');
             }
             
+            let firstDeltaLogged = false;
+            let firstReasoningLogged = false;
             for await (const chunk of stream as any) {
                 // 记录第一个token到达时间
                 if (firstTokenTime === 0) {
@@ -647,14 +652,22 @@ export const generateVideoSummaryStream = async (
                     llmFirstResponseTime = firstTokenTime - llmRequestStart;
                     console.log(`📊 Video ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
                 }
-                
+
                 // Reasoning tokens are display-only: never accumulated or persisted.
                 const delta = chunk?.choices?.[0]?.delta ?? {};
+                if (!firstDeltaLogged) {
+                    firstDeltaLogged = true;
+                    console.log(`[thinking-trace] v=${videoId} first-delta-keys=${JSON.stringify(Object.keys(delta))}`);
+                }
                 const reasoningChunk: string =
                     (typeof delta.reasoning === 'string' && delta.reasoning) ||
                     (typeof delta.reasoning_content === 'string' && delta.reasoning_content) ||
                     '';
                 if (reasoningChunk) {
+                    if (!firstReasoningLogged) {
+                        firstReasoningLogged = true;
+                        console.log(`[thinking-trace] v=${videoId} reasoning-streaming-started (first chunk len=${reasoningChunk.length})`);
+                    }
                     emitters.onReasoningDelta?.(reasoningChunk);
                 }
 
