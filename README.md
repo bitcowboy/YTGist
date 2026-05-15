@@ -94,6 +94,17 @@ npm run dev
 
 The app will be available at `http://localhost:5173`
 
+## Browser Extension
+
+A companion Chrome extension lives in [`extension/`](extension/). It embeds the YTGist panel in YouTube/Bilibili video pages and provides a toolbar popup that opens the matching summary.
+
+To load it:
+
+1. Open `chrome://extensions/` and enable **Developer mode**.
+2. Click **Load unpacked** and select the `extension/` directory in this repo.
+
+The extension is Manifest V3 with no build step — edit the source files in `extension/` directly. Adjust `GIST_BASE_URL` in `extension/popup.js` and `extension/content.js` if you self-host the web app on a different domain.
+
 ## Contributing
 
 PRs are welcome.
