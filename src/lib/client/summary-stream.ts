@@ -6,6 +6,7 @@ export type SummaryStreamHandlers = {
 	onComplete?: (fullSummary: string) => void;
 	onFinal?: (payload: FullSummaryData) => void;
 	onPartial?: (partial: Partial<FullSummaryData>) => void;
+	onReasoningDelta?: (delta: string) => void;
 	onError?: (message: string) => void;
 };
 
@@ -49,6 +50,14 @@ export const openSummaryStream = async (
 		const { delta } = safeParse<{ delta?: string }>(message.data ?? '') ?? {};
 		if (delta) {
 			handlers.onDelta?.(delta);
+		}
+	});
+
+	source.addEventListener('summary-reasoning', (event) => {
+		const message = event as MessageEvent;
+		const { delta } = safeParse<{ delta?: string }>(message.data ?? '') ?? {};
+		if (delta) {
+			handlers.onReasoningDelta?.(delta);
 		}
 	});
 

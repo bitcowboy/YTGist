@@ -8,6 +8,18 @@ import { env } from '$env/dynamic/private';
 /** Xiaomi Mimo v2.5 (OpenRouter): disable thinking mode per provider request body. */
 export const OPENROUTER_NO_REASONING = { thinking: { type: 'disabled' as const } };
 
+/**
+ * Opt-in reasoning/thinking output for the summary flow.
+ * Set OPENROUTER_SUMMARY_REASONING=true to let OpenRouter stream reasoning tokens
+ * (delta.reasoning / delta.reasoning_content) before the JSON body starts.
+ * Defaults to the existing OPENROUTER_NO_REASONING behavior for backward compat.
+ */
+export const summaryReasoningOptions = (): Record<string, unknown> => {
+	const v = env.OPENROUTER_SUMMARY_REASONING?.toLowerCase();
+	const enabled = v === 'true' || v === '1' || v === 'yes';
+	return enabled ? { reasoning: { enabled: true } } : OPENROUTER_NO_REASONING;
+};
+
 // Models that support JSON schema response_format
 const SCHEMA_SUPPORTED_MODELS = [
 	'openai/gpt-4o',

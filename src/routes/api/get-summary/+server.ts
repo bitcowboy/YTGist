@@ -114,6 +114,9 @@ export const GET = async ({ url }) => {
                         // const keys = Object.keys(partial).join(',');
                         // console.log(`[get-summary] 🧩 partial fields=${keys}`);
                         send('summary-partial', partial);
+                    },
+                    onReasoningDelta: (delta) => {
+                        safeEnqueue(`event: summary-reasoning\n` + `data: ${JSON.stringify({ delta })}\n\n`);
                     }
                 }, subtitleUrl)
                 .then((result) => {

@@ -37,6 +37,8 @@ import { openSummaryStream } from '$lib/client/summary-stream';
 			prevLoadKey = k;
 			clientSummary = null;
 			clientPlatform = null;
+			reasoningText = '';
+			contentStarted = false;
 		}
 	});
 
@@ -71,6 +73,13 @@ import { openSummaryStream } from '$lib/client/summary-stream';
     let ckpExpectNew = $state<boolean>(false);
     let streamFinalized = $state<boolean>(false);
     let streamController: { close: () => void } | null = null;
+    // Thinking-model reasoning tokens. Display-only while the model is still thinking;
+    // hidden as soon as any real content delta arrives, and never persisted.
+    let reasoningText = $state<string>('');
+    let contentStarted = $state<boolean>(false);
+    const markContentStarted = () => {
+        if (!contentStarted) contentStarted = true;
+    };
 
 onMount(() => {
     // 如果服务端已返回占位记录且标记为无字幕，直接显示无字幕页
@@ -112,16 +121,23 @@ onMount(() => {
             // 使用SSE进行流式获取
             (async () => {
             streamController = await openSummaryStream(urlVideoId, urlPlatform as any, {
+                onReasoningDelta: (delta) => {
+                    if (streamFinalized || contentStarted) return;
+                    reasoningText += delta;
+                },
                 onDelta: (delta) => {
                     if (streamFinalized) return;
+                    markContentStarted();
                     streamingText += delta;
                 },
                 onComplete: (full) => {
                     if (streamFinalized) return;
+                    markContentStarted();
                     streamingText = full;
                 },
                 onPartial: (partial: any) => {
                     if (streamFinalized) return;
+                    markContentStarted();
                     const field = partial?._field;
                     const isFinal = partial?._final === true;
 
@@ -198,6 +214,8 @@ onMount(() => {
                     kpExpectNew = false;
                     ctExpectNew = false;
                     ckpExpectNew = false;
+                    reasoningText = '';
+                    contentStarted = true;
                 },
                 onError: async (msg) => {
                     // 与现有错误语义对齐
@@ -446,6 +464,17 @@ onDestroy(() => {
                 {#if partialCommentsKeyPoints.length > 0}
                     <CommentsKeyPoints summaryData={{ ...(summaryData || {} as any) }} streamingCommentsKeyPoints={partialCommentsKeyPoints} />
                 {/if}
+            </div>
+        </div>
+    {:else if !contentStarted && reasoningText && reasoningText.length > 0}
+        <FloatingLoadingIndicator />
+        <div class="container mx-auto max-w-3xl px-4 py-6">
+            <div class="rounded-lg border border-zinc-800/60 bg-zinc-900/40 p-4">
+                <div class="mb-2 flex items-center gap-2 text-xs font-medium tracking-wider text-zinc-400 uppercase">
+                    <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-yellow-500"></span>
+                    Thinking
+                </div>
+                <pre class="font-serif text-sm leading-relaxed whitespace-pre-wrap break-words text-zinc-400">{reasoningText}</pre>
             </div>
         </div>
     {:else}
