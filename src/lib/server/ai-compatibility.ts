@@ -10,13 +10,20 @@ export const OPENROUTER_NO_REASONING = { thinking: { type: 'disabled' as const }
 
 /**
  * Opt-in reasoning/thinking output for the summary flow.
- * Set OPENROUTER_SUMMARY_REASONING=true to let OpenRouter stream reasoning tokens
- * (delta.reasoning / delta.reasoning_content) before the JSON body starts.
- * Defaults to the existing OPENROUTER_NO_REASONING behavior for backward compat.
+ *
+ * The caller (per-request) decides via the `thinking` argument — typically forwarded
+ * from a `?thinking=1` URL parameter set by the browser extension. When the argument
+ * is omitted/undefined, the server falls back to the OPENROUTER_SUMMARY_REASONING env
+ * var (truthy = on); when that is also unset the default is OFF.
  */
-export const summaryReasoningOptions = (): Record<string, unknown> => {
-	const v = env.OPENROUTER_SUMMARY_REASONING?.toLowerCase();
-	const enabled = v === 'true' || v === '1' || v === 'yes';
+export const summaryReasoningOptions = (thinking?: boolean): Record<string, unknown> => {
+	let enabled: boolean;
+	if (typeof thinking === 'boolean') {
+		enabled = thinking;
+	} else {
+		const v = env.OPENROUTER_SUMMARY_REASONING?.toLowerCase();
+		enabled = v === 'true' || v === '1' || v === 'yes';
+	}
 	return enabled ? { reasoning: { enabled: true } } : OPENROUTER_NO_REASONING;
 };
 

@@ -294,7 +294,8 @@ export const generateVideoSummaryStream = async (
     videoId: string,
     platform: VideoPlatform = 'youtube',
     emitters: StreamEmitters = {},
-    subtitleUrl?: string
+    subtitleUrl?: string,
+    thinking?: boolean
 ): Promise<VideoSummaryResult> => {
     const startTime = Date.now();
     try {
@@ -375,7 +376,7 @@ export const generateVideoSummaryStream = async (
         try {
             llmRequestStart = Date.now();
             console.log(`📊 Video ${videoId} - LLM request initiated at ${llmRequestStart}`);
-            
+
             const stream = await openai.chat.completions.create({
                 model: env.OPENROUTER_MODEL,
                 stream: true,
@@ -383,7 +384,7 @@ export const generateVideoSummaryStream = async (
                     { role: 'system', content: [prompt, prompt, prompt].join('\n\n') },
                     { role: 'user', content: JSON.stringify(userPayload) }
                 ],
-                ...summaryReasoningOptions(),
+                ...summaryReasoningOptions(thinking),
             } as any);
 
             let buffer = '';
@@ -646,7 +647,7 @@ export const generateVideoSummaryStream = async (
                     llmFirstResponseTime = firstTokenTime - llmRequestStart;
                     console.log(`📊 Video ${videoId} - First token received: ${llmFirstResponseTime}ms after request`);
                 }
-                
+
                 // Reasoning tokens are display-only: never accumulated or persisted.
                 const delta = chunk?.choices?.[0]?.delta ?? {};
                 const reasoningChunk: string =

@@ -1,8 +1,10 @@
 const LOCAL_DEBUG_STORAGE_KEY = "youtubegist_local_debug";
+const THINKING_STORAGE_KEY = "youtubegist_thinking";
 const REMOTE_BASE_URL = "https://host.996007.fun:4173/watch?v=";
 const LOCAL_BASE_URL = "http://localhost:5173/watch?v=";
 
 let GIST_BASE_URL = LOCAL_BASE_URL; // 默认使用远程服务器
+let THINKING_ENABLED = false; // 默认关闭 thinking 模式
 const PANEL_ID = "ygist-panel";
 const PANEL_HIDDEN_CLASS = "ygist-hidden";
 const PANEL_COLLAPSED_CLASS = "ygist-collapsed";
@@ -86,7 +88,11 @@ function initPlatformManager() {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === "UPDATE_BASE_URL") {
         GIST_BASE_URL = message.isLocalDebug ? LOCAL_BASE_URL : REMOTE_BASE_URL;
-        // 如果当前有视频在加载，重新加载
+        if (currentVideoId && isExpanded) {
+          loadCurrentVideo();
+        }
+      } else if (message.type === "UPDATE_THINKING") {
+        THINKING_ENABLED = Boolean(message.thinking);
         if (currentVideoId && isExpanded) {
           loadCurrentVideo();
         }
@@ -109,20 +115,22 @@ function initPlatformManager() {
   };
 
   if (HAS_CHROME_STORAGE) {
-    // 读取面板状态和local debug设置
-    chrome.storage.local.get({ 
+    // 读取面板状态、local debug 和 thinking 设置
+    chrome.storage.local.get({
       [PANEL_STATE_STORAGE_KEY]: isExpanded,
-      [LOCAL_DEBUG_STORAGE_KEY]: true 
+      [LOCAL_DEBUG_STORAGE_KEY]: true,
+      [THINKING_STORAGE_KEY]: false
     }, (result) => {
       if (!chrome.runtime || !chrome.runtime.lastError) {
         const stored = result ? result[PANEL_STATE_STORAGE_KEY] : undefined;
         if (typeof stored === "boolean") {
           isExpanded = stored;
         }
-        
-        // 更新GIST_BASE_URL
+
         const isLocalDebug = result[LOCAL_DEBUG_STORAGE_KEY] !== undefined ? result[LOCAL_DEBUG_STORAGE_KEY] : true;
         GIST_BASE_URL = isLocalDebug ? LOCAL_BASE_URL : REMOTE_BASE_URL;
+
+        THINKING_ENABLED = Boolean(result[THINKING_STORAGE_KEY]);
       } else {
         console.warn("YouTubeGist: 读取设置失败", chrome.runtime.lastError);
       }
@@ -446,7 +454,10 @@ async function loadCurrentVideo() {
 
   try {
     // 使用适配器构建Gist URL（异步方法）
-    const gistUrl = await currentAdapter.buildGistUrl(currentVideoId, GIST_BASE_URL);
+    let gistUrl = await currentAdapter.buildGistUrl(currentVideoId, GIST_BASE_URL);
+    if (THINKING_ENABLED) {
+      gistUrl += `${gistUrl.includes("?") ? "&" : "?"}thinking=1`;
+    }
     iframeEl.dataset.loaded = "false";
     setStatus("正在加载对应的 YouTubeGist 页面...");
     iframeEl.src = gistUrl;

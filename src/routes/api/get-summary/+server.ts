@@ -12,6 +12,8 @@ export const GET = async ({ url }) => {
     const nonce = url.searchParams.get('nonce');
     const platformParam = url.searchParams.get('platform') as VideoPlatform | null;
     let subtitleUrl = url.searchParams.get('subtitle_url') || undefined;
+    const thinkingParam = url.searchParams.get('thinking');
+    const thinking = thinkingParam === '1' || thinkingParam === 'true';
     
     // 解码 subtitle_url：先 URL 解码，再 base64 解码
     if (subtitleUrl) {
@@ -118,7 +120,7 @@ export const GET = async ({ url }) => {
                     onReasoningDelta: (delta) => {
                         safeEnqueue(`event: summary-reasoning\n` + `data: ${JSON.stringify({ delta })}\n\n`);
                     }
-                }, subtitleUrl)
+                }, subtitleUrl, thinking)
                 .then((result) => {
                     if (!result.success) {
                         if (result.errorType === 'CHANNEL_BLOCKED') {
