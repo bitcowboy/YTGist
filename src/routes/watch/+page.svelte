@@ -30,6 +30,10 @@ import { openSummaryStream } from '$lib/client/summary-stream';
 	let prevLoadKey = $state<string | null>(null);
 	let clientSummary = $state<FullSummaryData | null>(null);
 	let clientPlatform = $state<string | null>(null);
+	// Thinking-model reasoning tokens. Display-only while the model is still thinking;
+	// hidden as soon as any real content delta arrives, and never persisted.
+	let reasoningText = $state<string>('');
+	let contentStarted = $state<boolean>(false);
 
 	$effect.pre(() => {
 		const k = loadKey;
@@ -73,10 +77,6 @@ import { openSummaryStream } from '$lib/client/summary-stream';
     let ckpExpectNew = $state<boolean>(false);
     let streamFinalized = $state<boolean>(false);
     let streamController: { close: () => void } | null = null;
-    // Thinking-model reasoning tokens. Display-only while the model is still thinking;
-    // hidden as soon as any real content delta arrives, and never persisted.
-    let reasoningText = $state<string>('');
-    let contentStarted = $state<boolean>(false);
     const markContentStarted = () => {
         if (!contentStarted) contentStarted = true;
     };
