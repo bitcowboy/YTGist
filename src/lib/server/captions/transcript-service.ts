@@ -12,19 +12,19 @@ function ytdlpExecutable(): string {
 }
 
 function pickSubtitleFile(names: string[]): string | null {
-  const candidates = names.filter((n) => {
-    const lower = n.toLowerCase();
-    if (lower.endsWith('.part')) return false;
-    if (lower.endsWith('.json3')) return true;
-    if (lower.endsWith('.json') && !lower.endsWith('.info.json')) return true;
-    return false;
-  });
-  if (candidates.length === 0) return null;
-  const manual = candidates.filter(
-    (n) => !/\.auto\.|\.en-auto\.|-auto\.|_auto\.|\.auto\.json/i.test(n)
-  );
-  const pool = manual.length > 0 ? manual : candidates;
-  return pool.sort()[0] ?? null;
+  // Any json3 (or .json that isn't .info.json) is fair game — the transcript
+  // is handed to an LLM downstream, which handles any language. Sort just to
+  // make the choice deterministic when multiple files exist.
+  const candidates = names
+    .filter((n) => {
+      const lower = n.toLowerCase();
+      if (lower.endsWith('.part')) return false;
+      if (lower.endsWith('.json3')) return true;
+      if (lower.endsWith('.json') && !lower.endsWith('.info.json')) return true;
+      return false;
+    })
+    .sort();
+  return candidates[0] ?? null;
 }
 
 /** After yt-dlp exits, subtitle files may not be visible/readable immediately (Windows FS / slow disks). */
@@ -55,9 +55,20 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
     const outPattern = join(tempDir, '%(id)s.%(ext)s');
 
     const args = [
-      '--ignore-errors',
+      // A bounded whitelist of common languages. Without --sub-langs yt-dlp
+      // defaults to `en`; with `all` channels that upload per-language tracks
+      // (e.g. Hikakin TV's 130+) trip YouTube's HTTP 429 rate limit. This
+      // covers ~95% of videos with 10–15 candidate files at most. The picker
+      // grabs whichever lands first — the downstream LLM handles any language.
+      '--sub-langs',
+      'en,en-orig,zh-Hans,zh-Hant,zh,ja,ja-orig,ko,de,fr,es,ru,pt,ar,hi,it',
       '--extractor-args',
       'youtube:skip=translated_subs',
+      // Stop at the first 429 instead of retrying the rate limiter into a
+      // multi-minute hang — by that point we already have a couple of files.
+      '--abort-on-error',
+      '--retries',
+      '1',
       '--skip-download',
       '--no-playlist',
       '--no-warnings',
@@ -69,10 +80,6 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       '1',
       '--sleep-requests',
       '0.75',
-      '--retries',
-      '10',
-      '--retry-sleep',
-      '3',
       '-o',
       outPattern,
       `https://www.youtube.com/watch?v=${videoId}`,
