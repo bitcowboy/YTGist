@@ -60,8 +60,11 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       // (e.g. Hikakin TV's 130+) trip YouTube's HTTP 429 rate limit. This
       // covers ~95% of videos with 10–15 candidate files at most. The picker
       // grabs whichever lands first — the downstream LLM handles any language.
+      // The `.*` suffix lets each entry also match locale-suffixed variants
+      // (en-US, zh-CN, pt-BR, …); yt-dlp anchors with `$` so a bare `en`
+      // would miss them. translated_subs are still filtered via extractor-args.
       '--sub-langs',
-      'en,en-orig,zh-Hans,zh-Hant,zh,ja,ja-orig,ko,de,fr,es,ru,pt,ar,hi,it',
+      'en.*,zh.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
       '--extractor-args',
       'youtube:skip=translated_subs',
       // Stop at the first 429 instead of retrying the rate limiter into a
