@@ -119,9 +119,15 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
   }
 }
 
-export async function fetchTranscriptForVideo(
-  videoId: string
-): Promise<{ error: string } | { segments: YouTubeSegment[] }> {
+type TranscriptResult = { error: string } | { segments: YouTubeSegment[] };
+
+// Coalesce concurrent calls for the same videoId so EventSource reconnects and
+// duplicate /api/get-summary requests don't spawn parallel yt-dlp processes —
+// the fan-out makes YouTube's bot detector much more eager to return
+// "Sign in to confirm you're not a bot" on the prod IP.
+const inflight = new Map<string, Promise<TranscriptResult>>();
+
+async function doFetchTranscript(videoId: string): Promise<TranscriptResult> {
   let jsonText: string;
   try {
     jsonText = await runYtDlpJson3(videoId);
@@ -144,4 +150,17 @@ export async function fetchTranscriptForVideo(
   }
 
   return { segments: convertToYouTubeSegments(segments) };
+}
+
+export async function fetchTranscriptForVideo(videoId: string): Promise<TranscriptResult> {
+  const existing = inflight.get(videoId);
+  if (existing) {
+    console.log(`[methodThree] dedup: reusing in-flight yt-dlp for ${videoId}`);
+    return existing;
+  }
+  const pending = doFetchTranscript(videoId).finally(() => {
+    inflight.delete(videoId);
+  });
+  inflight.set(videoId, pending);
+  return pending;
 }
