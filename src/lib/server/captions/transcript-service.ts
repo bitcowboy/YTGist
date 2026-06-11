@@ -49,28 +49,20 @@ async function readSubtitleWhenReady(
   return null;
 }
 
-async function runYtDlpJson3(videoId: string): Promise<string> {
+async function runYtDlpOnce(
+  videoId: string,
+  opts: { subLangs: string; writeSubs: boolean; waitMs: number }
+): Promise<string | null> {
   const tempDir = await mkdtemp(join(tmpdir(), 'ytgist-subs-'));
   try {
     const outPattern = join(tempDir, '%(id)s.%(ext)s');
 
     const args = [
-      // A bounded whitelist of common languages. Without --sub-langs yt-dlp
-      // defaults to `en`; with `all` channels that upload per-language tracks
-      // (e.g. Hikakin TV's 130+) trip YouTube's HTTP 429 rate limit. This
-      // covers ~95% of videos with 10–15 candidate files at most. The picker
-      // grabs whichever lands first — the downstream LLM handles any language.
-      // The `.*` suffix lets each entry also match locale-suffixed variants
-      // (en-US, zh-CN, pt-BR, …); yt-dlp anchors with `$` so a bare `en`
-      // would miss them. translated_subs are still filtered via extractor-args.
-      // `.*-orig` goes first: yt-dlp downloads in --sub-langs order, and the
-      // `-orig` track is the original-language ASR (any language, even outside
-      // this whitelist). Auto-translated tracks (en, zh-Hans, … on a Cantonese
-      // video) are generated on the fly and 429 readily; if one aborts the run
-      // before anything lands we'd report NO_SUBTITLES even though the
-      // original track is cheap to fetch — so fetch it first.
       '--sub-langs',
-      '.*-orig,en.*,zh.*,yue.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
+      opts.subLangs,
+      // Filters tlang-translated auto captions in yt-dlp versions where it
+      // still works; broken at least in 2026.03.17 (the tracks pass through),
+      // which is why the attempt cascade below avoids them by construction.
       '--extractor-args',
       'youtube:skip=translated_subs',
       // Stop at the first 429 instead of retrying the rate limiter into a
@@ -81,7 +73,7 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       '--skip-download',
       '--no-playlist',
       '--no-warnings',
-      '--write-subs',
+      ...(opts.writeSubs ? ['--write-subs'] : []),
       '--write-auto-subs',
       '--sub-format',
       'json3',
@@ -115,14 +107,45 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       console.warn('[yt-dlp]', stderr.trim());
     }
 
-    const text = await readSubtitleWhenReady(tempDir, { maxMs: 15_000, intervalMs: 100 });
-    if (!text) {
-      throw new Error('NO_SUBTITLES_AVAILABLE');
-    }
-    return text;
+    return await readSubtitleWhenReady(tempDir, { maxMs: opts.waitMs, intervalMs: 100 });
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function runYtDlpJson3(videoId: string): Promise<string> {
+  // Attempt 1: the `-orig` track only — the original-language ASR, whatever
+  // the language. Auto-translated tracks (en, zh-Hans, … on a Cantonese
+  // video) are generated per request and 429 readily, so never ask for them:
+  // any whitelist pattern would match them too because they reuse plain
+  // language codes. One track, one download, covers every video that has
+  // auto captions.
+  const asrText = await runYtDlpOnce(videoId, {
+    subLangs: '.*-orig',
+    writeSubs: false,
+    // Failure mode is "no file was ever written", so don't sit out the full
+    // filesystem-visibility grace period before falling back.
+    waitMs: 4_000,
+  });
+  if (asrText) return asrText;
+
+  // Attempt 2: no ASR (music videos, captions-only uploads) — fetch manual
+  // subs from a bounded whitelist of common languages. `all` would trip the
+  // rate limiter on channels that upload per-language tracks (e.g. Hikakin
+  // TV's 130+). The `.*` suffix lets each entry also match locale-suffixed
+  // variants (en-US, zh-HK, pt-BR, …); yt-dlp anchors with `$` so a bare `en`
+  // would miss them. --write-auto-subs stays on as a safety net for plain-code
+  // ASR tracks (no `-orig` twin); the picker grabs whichever file lands —
+  // the downstream LLM handles any language.
+  const text = await runYtDlpOnce(videoId, {
+    subLangs: '.*-orig,en.*,zh.*,yue.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
+    writeSubs: true,
+    waitMs: 15_000,
+  });
+  if (!text) {
+    throw new Error('NO_SUBTITLES_AVAILABLE');
+  }
+  return text;
 }
 
 type TranscriptResult = { error: string } | { segments: YouTubeSegment[] };
