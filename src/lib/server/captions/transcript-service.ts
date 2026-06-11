@@ -63,8 +63,14 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       // The `.*` suffix lets each entry also match locale-suffixed variants
       // (en-US, zh-CN, pt-BR, …); yt-dlp anchors with `$` so a bare `en`
       // would miss them. translated_subs are still filtered via extractor-args.
+      // `.*-orig` goes first: yt-dlp downloads in --sub-langs order, and the
+      // `-orig` track is the original-language ASR (any language, even outside
+      // this whitelist). Auto-translated tracks (en, zh-Hans, … on a Cantonese
+      // video) are generated on the fly and 429 readily; if one aborts the run
+      // before anything lands we'd report NO_SUBTITLES even though the
+      // original track is cheap to fetch — so fetch it first.
       '--sub-langs',
-      'en.*,zh.*,yue.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
+      '.*-orig,en.*,zh.*,yue.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
       '--extractor-args',
       'youtube:skip=translated_subs',
       // Stop at the first 429 instead of retrying the rate limiter into a
