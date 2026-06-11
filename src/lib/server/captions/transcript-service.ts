@@ -64,7 +64,7 @@ async function runYtDlpJson3(videoId: string): Promise<string> {
       // (en-US, zh-CN, pt-BR, …); yt-dlp anchors with `$` so a bare `en`
       // would miss them. translated_subs are still filtered via extractor-args.
       '--sub-langs',
-      'en.*,zh.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
+      'en.*,zh.*,yue.*,ja.*,ko.*,de.*,fr.*,es.*,ru.*,pt.*,ar.*,hi.*,it.*',
       '--extractor-args',
       'youtube:skip=translated_subs',
       // Stop at the first 429 instead of retrying the rate limiter into a
